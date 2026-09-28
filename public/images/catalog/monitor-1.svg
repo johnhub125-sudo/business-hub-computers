@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ECFEFF"/><stop offset="1" stop-color="#E0F2FE"/></linearGradient>
+<linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E5E7EB"/><stop offset="1" stop-color="#9CA3AF"/></linearGradient>
+<linearGradient id="dark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#374151"/><stop offset="1" stop-color="#111827"/></linearGradient>
+<linearGradient id="screen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1E3A8A"/><stop offset="0.55" stop-color="#1B2A7B"/><stop offset="1" stop-color="#0F172A"/></linearGradient>
+<filter id="sh" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0f172a" flood-opacity="0.18"/></filter>
+</defs>
+<rect width="800" height="800" fill="url(#bg)"/>
+<circle cx="650" cy="140" r="120" fill="#fff" opacity="0.45"/>
+<circle cx="120" cy="690" r="90" fill="#fff" opacity="0.35"/>
+<g filter="url(#sh)"><rect x="130" y="170" width="540" height="340" rx="18" fill="url(#dark)"/><rect x="148" y="188" width="504" height="290" rx="6" fill="url(#screen)"/>
+   <path d="M148 391 Q 324.4 289.5 652 347.5 L 652 478 L 148 478 Z" fill="#F59E0B" opacity="0.35"/>
+   <path d="M148 434.5 Q 400 333 652 420 L 652 478 L 148 478 Z" fill="#fff" opacity="0.08"/>
+        <path d="M370 510 H430 L450 580 H350 Z" fill="#9CA3AF"/><rect x="290" y="578" width="220" height="18" rx="9" fill="#6B7280"/></g>
+
+</svg>
