@@ -82,6 +82,21 @@ export async function SiteFooter() {
               </a>
             </li>
           </ul>
+          {socials.length > 0 && (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {socials.map((s) => (
+                <a
+                  key={s.id}
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener"
+                  className="rounded-full border border-white/15 px-3 py-1 text-xs font-medium text-slate-300 transition hover:border-white/40 hover:text-white"
+                >
+                  {s.platform}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
         {cols.map(([title, links]) => (
           <div key={title}>
@@ -124,39 +139,46 @@ export async function SiteFooter() {
         ))}
       </div>
       <div className="border-t border-white/10">
-        {/* Extra bottom padding on mobile so the fixed tab bar never covers this row. */}
-        <div className="container-page flex flex-col items-center justify-between gap-3 pt-5 pb-[calc(5rem+env(safe-area-inset-bottom))] text-center text-[13px] text-slate-400 md:flex-row md:text-left lg:pb-5">
+        <div className="container-page flex flex-col items-center gap-3 py-5 text-center text-[13px] text-slate-400 md:flex-row md:justify-between md:text-left">
           <p>
-            © {year} {company.name}. All rights reserved. {company.rcNumber}
+            © {year} {company.name}. All rights reserved.
+            <span className="mx-2 hidden text-white/20 md:inline" aria-hidden>
+              |
+            </span>
+            <span className="block md:inline">{company.rcNumber}</span>
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <Link href="/terms" className="hover:text-white">
-              Terms
-            </Link>
-            <Link href="/privacy" className="hover:text-white">
-              Privacy
-            </Link>
-            <Link href="/cookies" className="hover:text-white">
-              Cookies
-            </Link>
-            {socials.map((s) => (
-              <a key={s.id} href={s.url} target="_blank" rel="noopener" className="hover:text-white">
-                {s.platform}
-              </a>
+          <nav aria-label="Legal" className="flex items-center gap-x-5">
+            {[
+              ["/terms", "Terms of use"],
+              ["/privacy", "Privacy policy"],
+              ["/cookies", "Cookie policy"],
+            ].map(([href, label]) => (
+              <Link key={href} href={href} className="hover:text-white">
+                {label}
+              </Link>
             ))}
-          </div>
+          </nav>
+        </div>
+      </div>
+      {/* Developer credit. Bottom padding keeps the fixed tab bar (mobile) and floating WhatsApp button clear of the text. */}
+      <div className="border-t border-white/10 bg-black/25">
+        <div className="container-page flex flex-col items-center justify-center gap-1 pt-4 pb-[calc(10rem+env(safe-area-inset-bottom))] text-center text-xs text-slate-400 sm:flex-row sm:gap-2 lg:pb-16">
           <p>
             Powered and maintained by <span className="font-semibold text-white">{BRAND_DEFAULTS.company.poweredBy}</span>
-            <span className="block sm:inline">
-              <span className="hidden sm:inline"> · </span>
-              <a href={BRAND_DEFAULTS.company.poweredByUrl} target="_blank" rel="noopener" className="hover:text-white">
-                {BRAND_DEFAULTS.company.poweredByWebsite}
-              </a>
-              {" · "}
-              <a href={`tel:${BRAND_DEFAULTS.company.poweredByPhoneHref}`} className="hover:text-white">
-                {BRAND_DEFAULTS.company.poweredByPhone}
-              </a>
+          </p>
+          <span className="hidden text-white/20 sm:inline" aria-hidden>
+            •
+          </span>
+          <p className="flex items-center gap-2">
+            <a href={BRAND_DEFAULTS.company.poweredByUrl} target="_blank" rel="noopener" className="text-accent-300 hover:text-accent-200">
+              {BRAND_DEFAULTS.company.poweredByWebsite}
+            </a>
+            <span className="text-white/20" aria-hidden>
+              •
             </span>
+            <a href={`tel:${BRAND_DEFAULTS.company.poweredByPhoneHref}`} className="hover:text-white">
+              {BRAND_DEFAULTS.company.poweredByPhone}
+            </a>
           </p>
         </div>
       </div>
