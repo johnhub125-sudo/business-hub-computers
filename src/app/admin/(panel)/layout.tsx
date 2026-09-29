@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Bell, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 import { ADMIN_NAV } from "@/components/admin/nav-config";
 import { AdminSidebar } from "@/components/admin/sidebar";
 import { initials } from "@/lib/utils";
@@ -14,6 +15,7 @@ import { getSettings } from "@/server/settings";
 export const metadata: Metadata = { title: { default: "Admin", template: "%s · Admin | Business Hub Computers" }, robots: { index: false, follow: false } };
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
+  await connection();
   const staff = await requireStaffPage();
   const has = (p?: string | string[]) => !p || (Array.isArray(p) ? p.some((x) => staff.permissions.has(x as never)) : staff.permissions.has(p as never));
   const groups = ADMIN_NAV.map((g) => ({ ...g, items: g.items.filter((i) => has(i.perm)) })).filter((g) => g.items.length);
