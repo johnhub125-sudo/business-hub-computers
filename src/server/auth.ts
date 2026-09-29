@@ -6,6 +6,7 @@ import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { twoFactor } from "better-auth/plugins";
 import { eq, sql } from "drizzle-orm";
+import { resolveSiteUrl } from "@/lib/site-url";
 import { passwordIssues } from "@/lib/validation/auth";
 import { securityEvent } from "./audit";
 import { db } from "./db";
@@ -44,9 +45,15 @@ const security = SETTINGS_DEFAULTS.security;
 
 export const auth = betterAuth({
   appName: "Business Hub Computers",
-  baseURL: process.env.BETTER_AUTH_URL ?? appUrl(),
-  secret: process.env.BETTER_AUTH_SECRET,
-  trustedOrigins: [appUrl(), ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : [])],
+  baseURL: resolveSiteUrl(process.env.BETTER_AUTH_URL, process.env.NEXT_PUBLIC_APP_URL),
+  secret: process.env.BETTER_AUTH_SECRET || undefined,
+  trustedOrigins: [
+    ...new Set(
+      [appUrl(), resolveSiteUrl(), process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]
+        .filter((u): u is string => Boolean(u && u.trim()))
+        .map((u) => (u.startsWith("http") ? u : `https://${u}`)),
+    ),
+  ],
   database: drizzleAdapter(db, { provider: "pg", schema: { ...schema, twoFactor: schema.twoFactor } }),
   // UUID ids everywhere (consistent with the rest of the schema).
   advanced: { database: { generateId: () => randomUUID() } },

@@ -10,13 +10,13 @@ function createPool() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
-      "DATABASE_URL is not configured. Run `npm run db:local` for a local database, or connect Neon in Vercel (see docs/setup/neon.md).",
+      "DATABASE_URL is not configured. Run `npm run db:local` for a local database, or connect Neon in Vercel (see docs/setup/vercel.md).",
     );
   }
   const isLocal = /localhost|127\.0\.0\.1/.test(connectionString);
   return new Pool({
     connectionString,
-    max: Number(process.env.DB_POOL_MAX ?? (isLocal ? 1 : 10)),
+    max: Number(process.env.DB_POOL_MAX || (isLocal ? 1 : 10)),
     ssl: isLocal ? undefined : { rejectUnauthorized: true },
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,

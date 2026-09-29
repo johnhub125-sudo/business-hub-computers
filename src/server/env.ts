@@ -1,4 +1,5 @@
 import "server-only";
+import { resolveSiteUrl } from "@/lib/site-url";
 
 /**
  * Central place for reading server configuration. Integrations call these helpers so a missing
@@ -8,14 +9,12 @@ import "server-only";
 export type AppEnv = "development" | "preview" | "production";
 
 export function appEnv(): AppEnv {
-  const v = process.env.VERCEL_ENV ?? process.env.APP_ENV ?? "development";
+  const v = process.env.VERCEL_ENV || process.env.APP_ENV || "development";
   return v === "production" || v === "preview" ? v : "development";
 }
 
 export function appUrl(): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3000";
+  return resolveSiteUrl(process.env.NEXT_PUBLIC_APP_URL);
 }
 
 export const integrations = {

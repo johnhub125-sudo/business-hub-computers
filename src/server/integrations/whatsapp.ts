@@ -26,7 +26,7 @@ export function whatsappLink(phone: string, text?: string) {
  */
 export async function sendWhatsAppNow(to: string, message: string): Promise<SendResult> {
   if (!integrations.whatsapp()) return { status: "not_configured" };
-  const base = process.env.WHATSAPP_API_URL ?? "https://graph.facebook.com/v21.0";
+  const base = process.env.WHATSAPP_API_URL || "https://graph.facebook.com/v21.0";
   const res = await fetch(`${base}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.WHATSAPP_API_TOKEN}`, "Content-Type": "application/json" },

@@ -257,7 +257,7 @@ async function createCredentialUser(input: { name: string; email: string; passwo
 }
 
 async function seedDemo() {
-  const env = process.env.VERCEL_ENV ?? process.env.APP_ENV;
+  const env = process.env.VERCEL_ENV || process.env.APP_ENV;
   if (env === "production") throw new Error("Refusing to create demo accounts in production.");
   const password = `Demo-${randomBytes(4).toString("hex")}!Aa9`;
   const customers = [
