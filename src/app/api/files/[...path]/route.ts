@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Serves PRIVATE uploads (payment proofs, support attachments) after an authorisation check.
- * Public media are served directly from Blob storage and never pass through here.
+ * Public media are served from Blob directly, or via /media when the Blob store is private.
  */
 export async function GET(_req: Request, ctx: RouteContext<"/api/files/[...path]">) {
   const { path } = await ctx.params;

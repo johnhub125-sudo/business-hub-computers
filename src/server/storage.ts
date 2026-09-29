@@ -69,6 +69,34 @@ export async function validateUpload(file: File, kind: UploadKind) {
   return { buf, mime: detected, ext: EXT[detected] };
 }
 
+/**
+ * Blob stores are either public or private. On a private store, public media are stored privately
+ * and served by /media/[...path] (CDN-cached), so the site works with either store type.
+ * Set BLOB_STORE_ACCESS=private to skip the first public attempt; otherwise it is detected once.
+ */
+let storeIsPrivate = process.env.BLOB_STORE_ACCESS === "private";
+const MEDIA_PREFIX = "/media/";
+
+async function putBlob(pathname: string, body: Buffer, access: "public" | "private", contentType: string): Promise<string> {
+  if (access === "public" && !storeIsPrivate) {
+    try {
+      return (await put(pathname, body, { access: "public", contentType, addRandomSuffix: false })).url;
+    } catch (err) {
+      if (!(err instanceof BlobError && /private store/i.test(err.message))) throw err;
+      storeIsPrivate = true;
+    }
+  }
+  const res = await put(pathname, body, { access: "private", contentType, addRandomSuffix: false });
+  return access === "public" ? `${MEDIA_PREFIX}${pathname}` : res.url;
+}
+
+/** Where a stored asset lives and how to fetch it from Blob. */
+function blobTarget(asset: { url: string; pathname: string; access: string }) {
+  if (asset.url.startsWith(MEDIA_PREFIX)) return { ref: asset.pathname, access: "private" as const };
+  if (asset.url.startsWith("http")) return { ref: asset.url, access: asset.access === "private" ? ("private" as const) : ("public" as const) };
+  return null; // local development file
+}
+
 export async function uploadFile(input: {
   file: File;
   kind: UploadKind;
@@ -86,8 +114,7 @@ export async function uploadFile(input: {
 
   if (integrations.blob()) {
     try {
-      const res = await put(pathname, Buffer.from(buf), { access: input.access, contentType: mime, addRandomSuffix: false });
-      url = res.url;
+      url = await putBlob(pathname, Buffer.from(buf), input.access, mime);
     } catch (err) {
       // Blob errors describe configuration problems (store, access mode, auth) and never contain secrets.
       if (err instanceof BlobError) {
@@ -121,7 +148,18 @@ export async function readPrivateFile(pathname: string): Promise<{ body: BodyIni
     const buf = await readFile(path.join(process.cwd(), ".data", "uploads", pathname)).catch(() => null);
     return buf ? { body: new Uint8Array(buf), contentType: asset.mimeType } : null;
   }
-  const res = await get(asset.url, { access: asset.access === "private" ? "private" : "public" });
+  const target = blobTarget(asset);
+  if (!target) return null;
+  const res = await get(target.ref, { access: target.access });
+  if (!res || res.statusCode !== 200) return null;
+  return { body: res.stream, contentType: asset.mimeType };
+}
+
+/** Streams a PUBLIC asset that was stored in a private Blob store. Never returns private files. */
+export async function readPublicMedia(pathname: string): Promise<{ body: BodyInit; contentType: string } | null> {
+  const [asset] = await db.select().from(mediaAssets).where(eq(mediaAssets.pathname, pathname));
+  if (!asset || asset.access !== "public" || !asset.url.startsWith(MEDIA_PREFIX)) return null;
+  const res = await get(asset.pathname, { access: "private" });
   if (!res || res.statusCode !== 200) return null;
   return { body: res.stream, contentType: asset.mimeType };
 }
@@ -129,6 +167,7 @@ export async function readPrivateFile(pathname: string): Promise<{ body: BodyIni
 export async function deleteFile(pathname: string) {
   const [asset] = await db.select().from(mediaAssets).where(eq(mediaAssets.pathname, pathname));
   if (!asset) return;
-  if (integrations.blob() && asset.url.startsWith("http")) await del(asset.url).catch(() => {});
+  const target = blobTarget(asset);
+  if (integrations.blob() && target) await del(target.ref).catch(() => {});
   await db.delete(mediaAssets).where(eq(mediaAssets.id, asset.id));
 }
