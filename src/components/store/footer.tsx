@@ -124,7 +124,8 @@ export async function SiteFooter() {
         ))}
       </div>
       <div className="border-t border-white/10">
-        <div className="container-page flex flex-col items-center justify-between gap-3 py-5 text-[13px] text-slate-400 md:flex-row">
+        {/* Extra bottom padding on mobile so the fixed tab bar never covers this row. */}
+        <div className="container-page flex flex-col items-center justify-between gap-3 pt-5 pb-[calc(5rem+env(safe-area-inset-bottom))] text-center text-[13px] text-slate-400 md:flex-row md:text-left lg:pb-5">
           <p>
             © {year} {company.name}. All rights reserved. {company.rcNumber}
           </p>
@@ -145,7 +146,17 @@ export async function SiteFooter() {
             ))}
           </div>
           <p>
-            Powered by <span className="font-semibold text-white">{BRAND_DEFAULTS.company.poweredBy}</span>
+            Powered and maintained by <span className="font-semibold text-white">{BRAND_DEFAULTS.company.poweredBy}</span>
+            <span className="block sm:inline">
+              <span className="hidden sm:inline"> · </span>
+              <a href={BRAND_DEFAULTS.company.poweredByUrl} target="_blank" rel="noopener" className="hover:text-white">
+                {BRAND_DEFAULTS.company.poweredByWebsite}
+              </a>
+              {" · "}
+              <a href={`tel:${BRAND_DEFAULTS.company.poweredByPhoneHref}`} className="hover:text-white">
+                {BRAND_DEFAULTS.company.poweredByPhone}
+              </a>
+            </span>
           </p>
         </div>
       </div>

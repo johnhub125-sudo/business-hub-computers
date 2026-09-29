@@ -53,7 +53,8 @@ export async function receiptData(orderId: string) {
       status: PAYMENT_STATUS[order.paymentStatus]?.label ?? order.paymentStatus,
       paidAt: order.paidAt,
     },
-    footer: settings.receipt.footer,
+    // The developer credit is printed separately; drop a legacy "Powered by …" suffix saved in settings.
+    footer: settings.receipt.footer.replace(/\s*Powered by .*$/i, ""),
     showWarranty: settings.receipt.showWarranty,
   };
 }

@@ -46,7 +46,7 @@ export const SETTINGS_DEFAULTS = {
     allowGuestCart: true,
   },
   inventory: { defaultMinStock: 2, lowStockAlerts: true },
-  receipt: { footer: `Thank you for your patronage. Powered by ${BRAND_DEFAULTS.company.poweredBy}`, showWarranty: true },
+  receipt: { footer: "Thank you for your patronage.", showWarranty: true },
   delivery: {
     collectionInstructions:
       "Our logistics agent will contact you by WhatsApp or phone with the motor park / agent details and expected collection date.",

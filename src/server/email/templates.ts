@@ -1,3 +1,4 @@
+import { BRAND_DEFAULTS } from "@/lib/brand";
 import { formatMoney } from "@/lib/money";
 
 /**
@@ -33,7 +34,7 @@ ${body}
 <tr><td style="padding:20px 28px;background:#f8f9fd;font-size:12px;color:#6b7280;line-height:1.6">
 <strong style="color:${NAVY}">${esc(c.name)}</strong> — ${esc(c.tagline)}<br>
 ${esc(c.phone)} • <a href="mailto:${esc(c.email)}" style="color:${NAVY}">${esc(c.email)}</a><br>
-Powered by ${esc(c.poweredBy)}
+Powered and maintained by ${esc(c.poweredBy)} · <a href="${BRAND_DEFAULTS.company.poweredByUrl}" style="color:#6b7280">${BRAND_DEFAULTS.company.poweredByWebsite}</a> · ${BRAND_DEFAULTS.company.poweredByPhone}
 </td></tr></table></td></tr></table></body></html>`;
 }
 

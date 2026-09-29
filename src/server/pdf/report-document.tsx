@@ -1,4 +1,5 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { POWERED_BY_LINE } from "@/lib/brand";
 
 const s = StyleSheet.create({
   page: { padding: 28, fontSize: 8.5, fontFamily: "Helvetica", color: "#1f2937" },
@@ -35,7 +36,7 @@ export function ReportDocument({ title, subtitle, columns, rows }: { title: stri
           </View>
         ))}
         {rows.length === 0 && <Text style={{ marginTop: 12 }}>No data for this period.</Text>}
-        <Text style={s.footer} fixed render={({ pageNumber, totalPages }) => `Business Hub Computers · Powered by Fodan Softnet Inc. · Page ${pageNumber} of ${totalPages}`} />
+        <Text style={s.footer} fixed render={({ pageNumber, totalPages }) => `Business Hub Computers · ${POWERED_BY_LINE} · Page ${pageNumber} of ${totalPages}`} />
       </Page>
     </Document>
   );

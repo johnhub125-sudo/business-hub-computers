@@ -1,4 +1,5 @@
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { POWERED_BY_LINE } from "@/lib/brand";
 import type { ReceiptData } from "../services/receipts";
 
 const NAVY = "#1B2A7B";
@@ -160,7 +161,7 @@ export function ReceiptDocument({ data, logo }: { data: ReceiptData; logo: Buffe
           <Text>
             {data.company.name} — {data.company.tagline}
           </Text>
-          <Text style={{ marginTop: 2 }}>Powered by Fodan Softnet Inc.</Text>
+          <Text style={{ marginTop: 2 }}>{POWERED_BY_LINE}</Text>
         </View>
       </Page>
     </Document>

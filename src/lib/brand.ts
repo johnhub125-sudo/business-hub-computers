@@ -2,6 +2,9 @@
  * White-label defaults. For a new client, edit this file (or change the values in
  * Admin → Settings, which override these at runtime). See docs/REBRAND.md.
  */
+/** Developer credit shown in the footer, emails, receipts and reports. */
+export const POWERED_BY_LINE = "Powered and maintained by Fodan Softnet Inc. · www.fodansoftnet.com · +234 806 757 8112";
+
 export const BRAND_DEFAULTS = {
   company: {
     name: "Business Hub Computers",
@@ -21,6 +24,10 @@ export const BRAND_DEFAULTS = {
     logoWidth: 640,
     logoHeight: 170,
     poweredBy: "Fodan Softnet Inc.",
+    poweredByUrl: "https://www.fodansoftnet.com",
+    poweredByWebsite: "www.fodansoftnet.com",
+    poweredByPhone: "+234 806 757 8112",
+    poweredByPhoneHref: "+2348067578112",
   },
   contact: {
     phone: "+234 803 394 1858",
