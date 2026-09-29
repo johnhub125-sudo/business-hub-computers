@@ -15,7 +15,7 @@
    ```
 
 ## Blob storage {#blob}
-Vercel → **Storage → Create → Blob** → connect to the project. This injects `BLOB_READ_WRITE_TOKEN`.
+Vercel → **Storage → Create → Blob** → connect to the project. This injects `BLOB_STORE_ID` (newer stores, authenticated automatically via Vercel OIDC) or `BLOB_READ_WRITE_TOKEN` (older stores) — either works.
 Product/gallery images are public; payment proofs and attachments are stored **private** and served only through `/api/files/*` after an authorisation check.
 
 ## Environment variables
