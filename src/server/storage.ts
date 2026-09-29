@@ -2,12 +2,13 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { get, put, del } from "@vercel/blob";
+import { BlobError, get, put, del } from "@vercel/blob";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { mediaAssets } from "./db/schema";
 import { appEnv, integrations } from "./env";
 import { UserError } from "./errors";
+import { log } from "./logger";
 
 /**
  * File storage: Vercel Blob in preview/production. In local development without a Blob token,
@@ -84,8 +85,17 @@ export async function uploadFile(input: {
   let url: string;
 
   if (integrations.blob()) {
-    const res = await put(pathname, Buffer.from(buf), { access: input.access, contentType: mime, addRandomSuffix: false });
-    url = res.url;
+    try {
+      const res = await put(pathname, Buffer.from(buf), { access: input.access, contentType: mime, addRandomSuffix: false });
+      url = res.url;
+    } catch (err) {
+      // Blob errors describe configuration problems (store, access mode, auth) and never contain secrets.
+      if (err instanceof BlobError) {
+        log.error("Blob upload failed", { err, access: input.access, folder: input.folder });
+        throw new UserError(`Upload failed — ${err.message}`);
+      }
+      throw err;
+    }
   } else if (appEnv() === "development") {
     const root = input.access === "public" ? path.join(process.cwd(), "public", "uploads") : path.join(process.cwd(), ".data", "uploads");
     const target = path.join(root, pathname);
