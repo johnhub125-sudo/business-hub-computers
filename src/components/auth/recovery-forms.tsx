@@ -16,6 +16,7 @@ export function ForgotPasswordForm() {
   const [pending, setPending] = useState(false);
   return (
     <form
+      method="post"
       onSubmit={async (e) => {
         e.preventDefault();
         setError(null);
@@ -58,6 +59,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
   const [pending, setPending] = useState(false);
   return (
     <form
+      method="post"
       onSubmit={async (e) => {
         e.preventDefault();
         setError(null);
@@ -96,6 +98,7 @@ export function TwoFactorForm({ next, area }: { next: string | null; area: "stor
   const [backup, setBackup] = useState(false);
   return (
     <form
+      method="post"
       onSubmit={async (e) => {
         e.preventDefault();
         setError(null);

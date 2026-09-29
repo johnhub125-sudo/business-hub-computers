@@ -24,6 +24,7 @@ export function ChangePasswordCard({ forced }: { forced?: boolean }) {
       <h2 className="font-bold">{forced ? "Change your temporary password" : "Change password"}</h2>
       {forced && <p className="mt-1 text-sm text-amber-800">For security, you must set a new password before continuing.</p>}
       <form
+        method="post"
         className="mt-4 grid max-w-md gap-3"
         onSubmit={async (e) => {
           e.preventDefault();
@@ -93,6 +94,7 @@ export function TwoFactorCard({ enabled, recommended }: { enabled: boolean; reco
       </div>
       {(step === "password" || step === "disable") && (
         <form
+          method="post"
           className="mt-4 grid max-w-sm gap-3"
           onSubmit={async (e) => {
             e.preventDefault();
@@ -132,6 +134,7 @@ export function TwoFactorCard({ enabled, recommended }: { enabled: boolean; reco
       )}
       {step === "scan" && (
         <form
+          method="post"
           className="mt-4 space-y-3"
           onSubmit={async (e) => {
             e.preventDefault();

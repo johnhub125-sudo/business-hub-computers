@@ -3,28 +3,31 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CustomerStatus } from "@/components/admin/customer-status";
+import { EmailVerificationControls } from "@/components/admin/email-controls";
 import { AdminHeader, Panel, Table } from "@/components/admin/ui";
 import { Badge, StatCard, StatusBadge } from "@/components/ui/misc";
 import { formatMoney } from "@/lib/money";
 import { ORDER_STATUS, PAYMENT_STATUS, TICKET_STATUS } from "@/lib/status";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { db } from "@/server/db";
-import { addresses, customerProfiles, orders, reviews, supportTickets, user } from "@/server/db/schema";
-import { requireStaffPage } from "@/server/session";
+import { addresses, customerProfiles, orders, outboxMessages, reviews, supportTickets, user } from "@/server/db/schema";
+import { can, requireStaffPage } from "@/server/session";
 
 export const metadata: Metadata = { title: "Customer" };
 
 export default async function CustomerPage({ params }: PageProps<"/admin/customers/[id]">) {
-  await requireStaffPage("customers.manage");
+  const staff = await requireStaffPage("customers.manage");
+  const canVerify = can(staff, "customers.verify");
   const { id } = await params;
   const [u] = await db.select().from(user).where(eq(user.id, id));
   if (!u || u.userType !== "customer") notFound();
-  const [[p], addr, ords, tickets, revs] = await Promise.all([
+  const [[p], addr, ords, tickets, revs, emails] = await Promise.all([
     db.select().from(customerProfiles).where(eq(customerProfiles.userId, id)),
     db.select().from(addresses).where(eq(addresses.userId, id)),
     db.select().from(orders).where(eq(orders.userId, id)).orderBy(desc(orders.placedAt)),
     db.select().from(supportTickets).where(eq(supportTickets.userId, id)).orderBy(desc(supportTickets.createdAt)),
     db.select().from(reviews).where(eq(reviews.userId, id)),
+    db.select().from(outboxMessages).where(eq(outboxMessages.recipient, u.email)).orderBy(desc(outboxMessages.createdAt)).limit(10),
   ]);
   const paid = ords.filter((o) => o.paymentStatus === "successful");
   const spent = paid.reduce((s, o) => s + o.grandTotal, 0);
@@ -38,7 +41,12 @@ export default async function CustomerPage({ params }: PageProps<"/admin/custome
           </span>
         }
         back={{ href: "/admin/customers", label: "Customers" }}
-        actions={<CustomerStatus userId={u.id} status={u.status} />}
+        actions={
+          <>
+            {!u.emailVerified && canVerify && <EmailVerificationControls userId={u.id} />}
+            <CustomerStatus userId={u.id} status={u.status} />
+          </>
+        }
       />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Orders" value={ords.length} />
@@ -89,6 +97,21 @@ export default async function CustomerPage({ params }: PageProps<"/admin/custome
               {!tickets.length && <li className="text-muted">No tickets.</li>}
             </ul>
             <p className="mt-3 text-sm text-muted">{revs.length} review(s) written.</p>
+          </Panel>
+          <Panel title="Recent emails">
+            <ul className="space-y-2 text-sm">
+              {emails.map((m) => (
+                <li key={m.id}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{m.template.replace(/([A-Z])/g, " $1").toLowerCase()}</span>
+                    <Badge tone={m.status === "sent" ? "success" : m.status === "pending" ? "neutral" : "danger"}>{m.status}</Badge>
+                  </div>
+                  <p className="text-xs text-muted">{formatDateTime(m.createdAt)}</p>
+                  {m.lastError && m.status !== "sent" && <p className="break-words text-xs text-red-700">{m.lastError}</p>}
+                </li>
+              ))}
+              {!emails.length && <li className="text-muted">No emails recorded.</li>}
+            </ul>
           </Panel>
         </div>
         <Panel title="Orders" bodyClassName="p-0">

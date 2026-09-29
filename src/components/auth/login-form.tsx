@@ -9,7 +9,23 @@ import { Field, FormError, FormSuccess, Input } from "@/components/ui/form";
 import { authClient } from "@/lib/auth-client";
 import { PasswordInput } from "./password-input";
 
-export function LoginForm({ next, area = "store", notice }: { next?: string | null; area?: "store" | "admin"; notice?: string | null }) {
+const UNVERIFIED_NOTICE = {
+  live: "Please verify your email first. We've just sent you a new verification link — check your inbox (and spam folder).",
+  limited: "Please verify your email first. We've tried to send you a new link; if it doesn't arrive within a few minutes, contact us and we'll activate your account.",
+  off: "Please verify your email first. We can't send verification emails right now — please contact us and we'll activate your account.",
+} as const;
+
+export function LoginForm({
+  next,
+  area = "store",
+  notice,
+  emailDelivery = "live",
+}: {
+  next?: string | null;
+  area?: "store" | "admin";
+  notice?: string | null;
+  emailDelivery?: keyof typeof UNVERIFIED_NOTICE;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(notice ?? null);
@@ -28,7 +44,8 @@ export function LoginForm({ next, area = "store", notice }: { next?: string | nu
     if (err) {
       setPending(false);
       if (err.status === 403 && /verif/i.test(err.message ?? "")) {
-        setInfo("Please verify your email first. We've just sent you a new verification link.");
+        if (emailDelivery !== "off") await authClient.sendVerificationEmail({ email, callbackURL: "/account?verified=1" });
+        setInfo(UNVERIFIED_NOTICE[emailDelivery]);
         return;
       }
       setError(err.status === 401 ? "Incorrect email or password." : (err.message ?? "Sign in failed. Please try again."));
@@ -44,7 +61,7 @@ export function LoginForm({ next, area = "store", notice }: { next?: string | nu
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+    <form method="post" onSubmit={onSubmit} className="space-y-4" noValidate>
       <FormError message={error} />
       <FormSuccess message={info} />
       <Field label="Email address" htmlFor="email" required>

@@ -4,7 +4,7 @@ import { AccountNav } from "@/components/account/account-nav";
 import { ResendVerification } from "@/components/account/resend-verification";
 import { db } from "@/server/db";
 import { notifications } from "@/server/db/schema";
-import { requireUserPage } from "@/server/session";
+import { emailVerificationRequired, requireUserPage } from "@/server/session";
 
 export default async function AccountLayout({ children }: LayoutProps<"/account">) {
   const me = await requireUserPage("/account");
@@ -14,7 +14,7 @@ export default async function AccountLayout({ children }: LayoutProps<"/account"
     .where(and(eq(notifications.userId, me.id), isNull(notifications.readAt), isNull(notifications.archivedAt)));
   return (
     <div className="container-page py-6">
-      {!me.emailVerified && (
+      {!me.emailVerified && (await emailVerificationRequired()) && (
         <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <MailWarning className="size-5 shrink-0" aria-hidden />
           <span className="flex-1">Please verify your email address to place orders. Check your inbox for the link.</span>

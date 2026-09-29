@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { safeNext } from "@/lib/utils";
+import { emailDelivery } from "@/server/email";
 import { getCurrentUser } from "@/server/session";
 
 export const metadata: Metadata = { title: "Sign in", robots: { index: false } };
@@ -26,7 +27,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         </>
       }
     >
-      <LoginForm next={next} notice={notice} />
+      <LoginForm next={next} notice={notice} emailDelivery={emailDelivery()} />
     </AuthShell>
   );
 }

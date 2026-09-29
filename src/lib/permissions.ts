@@ -12,6 +12,7 @@ export const PERMISSIONS = {
   "purchases.manage": { module: "Purchases", description: "Record and receive purchases" },
   "orders.manage": { module: "Orders", description: "View and update orders" },
   "customers.manage": { module: "Customers", description: "View and manage customers" },
+  "customers.verify": { module: "Customers", description: "Verify customer email addresses" },
   "payments.view": { module: "Payments", description: "View payments and reconciliation" },
   "payments.manage": { module: "Payments", description: "Reconcile, flag and annotate payments" },
   "payments.verify_transfer": { module: "Payments", description: "Verify bank transfers" },
@@ -50,7 +51,7 @@ export const DEFAULT_ROLES: { slug: string; name: string; description: string; p
     slug: "sales-manager",
     name: "Sales Manager",
     description: "Orders, customers and POS",
-    permissions: ["products.view", "orders.manage", "customers.manage", "pos.use", "reports.view", "payments.view"],
+    permissions: ["products.view", "orders.manage", "customers.manage", "customers.verify", "pos.use", "reports.view", "payments.view"],
   },
   {
     slug: "inventory-manager",

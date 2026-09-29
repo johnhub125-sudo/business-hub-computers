@@ -7,7 +7,7 @@ import { Breadcrumbs, EmptyState } from "@/components/ui/misc";
 import { db } from "@/server/db";
 import { addresses, customerProfiles, paymentAccounts } from "@/server/db/schema";
 import { paystackConfig } from "@/server/integrations/paystack";
-import { requireUserPage } from "@/server/session";
+import { emailVerificationRequired, requireUserPage } from "@/server/session";
 import { getCartView } from "@/server/services/cart";
 import { getSetting } from "@/server/settings";
 
@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Checkout", robots: { index: false } 
 
 export default async function CheckoutPage() {
   const me = await requireUserPage("/checkout");
-  if (!me.emailVerified) {
+  if (!me.emailVerified && (await emailVerificationRequired())) {
     return (
       <div className="container-page py-10">
         <EmptyState icon={<MailWarning />} title="Please verify your email" description="Check your inbox for the verification link we sent when you registered. Verified accounts keep your orders and receipts secure." />

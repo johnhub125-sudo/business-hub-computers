@@ -6,11 +6,11 @@ import { audit, securityEvent } from "@/server/audit";
 import { auth, internalSignupHeaders } from "@/server/auth";
 import { db } from "@/server/db";
 import { addresses, customerProfiles, staffProfiles, user } from "@/server/db/schema";
-import { enqueueEmail, processOutbox } from "@/server/email";
+import { enqueueEmail, lastDelivery, processOutbox } from "@/server/email";
 import { runAction, UserError } from "@/server/errors";
 import { log } from "@/server/logger";
 import { enforceRateLimit } from "@/server/ratelimit";
-import { getCurrentUser, getStaffContext } from "@/server/session";
+import { emailVerificationRequired, getCurrentUser, getStaffContext } from "@/server/session";
 import { mergeGuestCart } from "@/server/services/cart";
 import { notifyStaff } from "@/server/services/notifications";
 import { registerSchema, staffRegisterSchema } from "@/lib/validation/auth";
@@ -37,6 +37,7 @@ export async function registerCustomerAction(_: unknown, fd: FormData) {
       throw new UserError("An account with this email already exists. Try signing in or resetting your password.", { email: "Email already registered" });
     }
     const name = [data.firstName, data.surname].join(" ");
+    const started = new Date(Date.now() - 1000);
     const res = await auth.api.signUpEmail({
       body: { name, email: data.email, password: data.password, callbackURL: "/account?welcome=1" },
       headers: internalSignupHeaders(),
@@ -68,8 +69,10 @@ export async function registerCustomerAction(_: unknown, fd: FormData) {
     }
     await securityEvent({ type: "registered", userId, email: data.email });
     after(() => processOutbox().catch(() => {}));
-    return { email: data.email };
-  }, "Account created! We've sent a verification link to your email.");
+    // Better Auth awaits the verification email during sign-up, so its outcome is already recorded.
+    const delivery = await lastDelivery(data.email, "verifyEmail", started);
+    return { email: data.email, emailSent: delivery?.status === "sent", verificationRequired: await emailVerificationRequired() };
+  }, "Account created!");
 }
 
 export async function registerStaffAction(_: unknown, fd: FormData) {

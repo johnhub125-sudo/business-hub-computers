@@ -9,6 +9,7 @@ import { initials } from "@/lib/utils";
 import { db } from "@/server/db";
 import { notifications, payments, reviews, staffProfiles, supportTickets } from "@/server/db/schema";
 import { paystackConfig } from "@/server/integrations/paystack";
+import { ensurePermissionCatalog } from "@/server/permission-catalog";
 import { requireStaffPage } from "@/server/session";
 import { getSettings } from "@/server/settings";
 
@@ -16,6 +17,7 @@ export const metadata: Metadata = { title: { default: "Admin", template: "%s · 
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   await connection();
+  await ensurePermissionCatalog();
   const staff = await requireStaffPage();
   const has = (p?: string | string[]) => !p || (Array.isArray(p) ? p.some((x) => staff.permissions.has(x as never)) : staff.permissions.has(p as never));
   const groups = ADMIN_NAV.map((g) => ({ ...g, items: g.items.filter((i) => has(i.perm)) })).filter((g) => g.items.length);

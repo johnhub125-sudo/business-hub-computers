@@ -4,6 +4,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { Resend } from "resend";
 import { db } from "./db";
 import { outboxMessages, webhookEvents } from "./db/schema";
+import { emailDelivery } from "./email";
 import { appEnv, integrations } from "./env";
 import { paystackConfig, testConnection } from "./integrations/paystack";
 
@@ -51,8 +52,13 @@ export async function runHealthChecks(): Promise<HealthCheck[]> {
   } else {
     try {
       const r = await timed(() => new Resend(process.env.RESEND_API_KEY).domains.list());
-      if (r.error) throw new Error(r.error.message);
-      checks.push({ key: "email", name: "Email (Resend)", status: "Connected", detail: `Sending as ${process.env.EMAIL_FROM}` });
+      // "Sending access" keys can't list domains but can send — that is the recommended key type.
+      if (r.error && !/restricted/i.test(`${r.error.name} ${r.error.message}`)) throw new Error(r.error.message);
+      if (emailDelivery() === "limited") {
+        checks.push({ key: "email", name: "Email (Resend)", status: "Error", detail: `Test sender (${process.env.EMAIL_FROM}) only delivers to your Resend account's own email — customers get nothing. Verify a domain in Resend and update EMAIL_FROM.`, setup: "docs/setup/resend.md" });
+      } else {
+        checks.push({ key: "email", name: "Email (Resend)", status: "Connected", detail: `Sending as ${process.env.EMAIL_FROM}. Use "Send test email" to confirm delivery.` });
+      }
     } catch (e) {
       checks.push({ key: "email", name: "Email (Resend)", status: "Error", detail: (e as Error).message.slice(0, 120) });
     }

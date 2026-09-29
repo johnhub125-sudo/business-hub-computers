@@ -8,6 +8,7 @@ import { auth } from "./auth";
 import { db } from "./db";
 import { permissions, rolePermissions, roles, staffProfiles, user, userRoles } from "./db/schema";
 import { ForbiddenError, UnauthorizedError } from "./errors";
+import { getSetting } from "./settings";
 
 export const getSession = cache(async () => {
   try {
@@ -95,6 +96,11 @@ function staffIsActive(s: StaffContext) {
 
 /* ---------------- guards for Server Actions / Route Handlers (throw) ---------------- */
 
+/** Whether customers must verify their email before signing in and ordering (Admin → Settings → Security). */
+export async function emailVerificationRequired() {
+  return (await getSetting("security")).requireEmailVerification;
+}
+
 export async function requireUserOrThrow() {
   const u = await getCurrentUser();
   if (!u) throw new UnauthorizedError();
@@ -104,7 +110,7 @@ export async function requireUserOrThrow() {
 
 export async function requireCustomerOrThrow() {
   const u = await requireUserOrThrow();
-  if (!u.emailVerified) throw new ForbiddenError("Please verify your email address first.");
+  if (!u.emailVerified && (await emailVerificationRequired())) throw new ForbiddenError("Please verify your email address first.");
   return u;
 }
 

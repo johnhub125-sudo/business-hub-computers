@@ -1,5 +1,6 @@
 import "server-only";
-import { and, asc, eq, lte, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { Resend } from "resend";
 import { BRAND_DEFAULTS } from "@/lib/brand";
 import { db, type Executor } from "../db";
@@ -50,15 +51,61 @@ export async function sendEmailNow(to: string, content: EmailContent, idempotenc
   return { status: "sent", id: data?.id };
 }
 
-/** Renders and sends a template immediately (used for auth emails that contain one-time links). */
+/**
+ * "live": sending from a verified domain. "limited": Resend's shared test sender (onboarding@resend.dev),
+ * which only delivers to the Resend account owner's address. "off": Resend not configured.
+ */
+export type EmailDelivery = "live" | "limited" | "off";
+export function emailDelivery(): EmailDelivery {
+  if (!integrations.email()) return "off";
+  return /@resend\.dev>?\s*$/i.test(process.env.EMAIL_FROM ?? "") ? "limited" : "live";
+}
+
+/**
+ * Renders and sends a template immediately (used for auth emails that contain one-time links).
+ * Never throws — auth flows must not fail because of email — and records the outcome in the
+ * delivery log (outbox table) WITHOUT the payload, so one-time links are never stored.
+ */
 export async function sendTemplateNow<T extends TemplateName>(
   template: T,
   to: string,
   data: Parameters<(typeof templates)[T]>[1],
-) {
-  const company = await companyForEmail();
-  const render = templates[template] as (c: Company, d: typeof data) => EmailContent;
-  return sendEmailNow(to, render(company, data));
+): Promise<SendResult> {
+  let result: SendResult;
+  try {
+    const company = await companyForEmail();
+    const render = templates[template] as (c: Company, d: typeof data) => EmailContent;
+    result = await sendEmailNow(to, render(company, data));
+  } catch (err) {
+    log.error("Email send threw", { template, err });
+    result = { status: "failed", error: err instanceof Error ? err.message : String(err) };
+  }
+  await db
+    .insert(outboxMessages)
+    .values({
+      channel: "email",
+      template,
+      recipient: to,
+      payload: {},
+      dedupeKey: `direct:${randomUUID()}`,
+      status: result.status === "sent" ? "sent" : result.status === "not_configured" ? "skipped" : "failed",
+      attempts: 1,
+      lastError: result.error ?? (result.status === "not_configured" ? "Email provider not configured" : null),
+      sentAt: result.status === "sent" ? new Date() : null,
+    })
+    .catch((err) => log.error("Could not record email delivery", { err }));
+  return result;
+}
+
+/** Latest recorded delivery of `template` to `to` since `since` (used to report honestly to the user). */
+export async function lastDelivery(to: string, template: TemplateName, since: Date) {
+  const [row] = await db
+    .select({ status: outboxMessages.status, lastError: outboxMessages.lastError })
+    .from(outboxMessages)
+    .where(and(eq(outboxMessages.recipient, to), eq(outboxMessages.template, template), gte(outboxMessages.createdAt, since)))
+    .orderBy(desc(outboxMessages.createdAt))
+    .limit(1);
+  return row ?? null;
 }
 
 /**

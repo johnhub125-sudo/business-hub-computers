@@ -141,7 +141,7 @@ export function CheckoutForm({
   const blockingIssues = (totals?.issues ?? []).filter((i) => i.code !== "logistics");
 
   return (
-    <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[1fr_400px]" noValidate>
+    <form method="post" onSubmit={submit} className="grid gap-6 lg:grid-cols-[1fr_400px]" noValidate>
       <div className="space-y-6">
         <section className="rounded-2xl border border-line bg-white p-5 sm:p-6">
           <h2 className="flex items-center gap-2 text-lg font-bold">

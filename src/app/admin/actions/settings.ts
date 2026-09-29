@@ -46,7 +46,7 @@ const SCHEMAS = {
   receipt: z.object({ footer: str(300), showWarranty: bool }),
   delivery: z.object({ collectionInstructions: str(1000), defaultEtaDays: int(0, 30) }),
   notifications: z.object({ adminAlertEmail: z.string().trim().email().or(z.literal("")), emailEnabled: bool, whatsappEnabled: bool }),
-  security: z.object({ maxFailedLogins: int(3, 20), lockMinutes: int(1, 1440), sessionDays: int(1, 90), requireAdmin2fa: bool }),
+  security: z.object({ maxFailedLogins: int(3, 20), lockMinutes: int(1, 1440), sessionDays: int(1, 90), requireAdmin2fa: bool, requireEmailVerification: bool }),
   seo: z.object({ defaultTitle: str(120).min(5), defaultDescription: str(300), keywords: str(500), ogImage: str(500) }),
   analytics: z.object({ vercelAnalytics: bool, speedInsights: bool }),
 } satisfies Partial<Record<SettingKey, z.ZodTypeAny>>;

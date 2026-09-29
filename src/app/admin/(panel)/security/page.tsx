@@ -1,11 +1,12 @@
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import { ChangePasswordCard, SessionsCard, TwoFactorCard } from "@/components/account/security-panel";
+import { SendTestEmailButton } from "@/components/admin/email-controls";
 import { AdminHeader, Panel, Table } from "@/components/admin/ui";
 import { Badge } from "@/components/ui/misc";
 import { formatDateTime } from "@/lib/utils";
 import { db } from "@/server/db";
-import { securityEvents } from "@/server/db/schema";
+import { outboxMessages, securityEvents } from "@/server/db/schema";
 import { runHealthChecks } from "@/server/health";
 import { can, getSession, requireStaffPage } from "@/server/session";
 
@@ -18,7 +19,11 @@ export default async function AdminSecurityPage({ searchParams }: PageProps<"/ad
   const sp = await searchParams;
   const session = await getSession();
   const manage = can(staff, "security.manage");
-  const [checks, events] = await Promise.all([manage ? runHealthChecks() : Promise.resolve([]), manage ? db.select().from(securityEvents).orderBy(desc(securityEvents.createdAt)).limit(40) : Promise.resolve([])]);
+  const [checks, events, emails] = await Promise.all([
+    manage ? runHealthChecks() : Promise.resolve([]),
+    manage ? db.select().from(securityEvents).orderBy(desc(securityEvents.createdAt)).limit(40) : Promise.resolve([]),
+    manage ? db.select().from(outboxMessages).where(eq(outboxMessages.channel, "email")).orderBy(desc(outboxMessages.createdAt)).limit(15) : Promise.resolve([]),
+  ]);
   return (
     <div className="space-y-6">
       <AdminHeader title="Security & health" description="Your account security, and (for security managers) system health and security events." />
@@ -31,7 +36,7 @@ export default async function AdminSecurityPage({ searchParams }: PageProps<"/ad
       </div>
       {manage && (
         <>
-          <Panel title="System health">
+          <Panel title="System health" actions={<SendTestEmailButton />}>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {checks.map((c) => (
                 <div key={c.key} className="rounded-xl border border-line p-4">
@@ -44,6 +49,21 @@ export default async function AdminSecurityPage({ searchParams }: PageProps<"/ad
                 </div>
               ))}
             </div>
+          </Panel>
+          <Panel title="Recent emails" bodyClassName="p-0">
+            <Table head={["When", "Email", "To", "Status", "Details"]} empty="No emails yet.">
+              {emails.map((m) => (
+                <tr key={m.id}>
+                  <td className="whitespace-nowrap text-muted">{formatDateTime(m.createdAt)}</td>
+                  <td className="font-medium">{m.template.replace(/([A-Z])/g, " $1").toLowerCase()}</td>
+                  <td>{m.recipient}</td>
+                  <td>
+                    <Badge tone={m.status === "sent" ? "success" : m.status === "pending" ? "neutral" : "danger"}>{m.status}</Badge>
+                  </td>
+                  <td className="max-w-md break-words text-xs text-muted">{m.status === "sent" ? "—" : (m.lastError ?? "Waiting to send")}</td>
+                </tr>
+              ))}
+            </Table>
           </Panel>
           <Panel title="Recent security events" bodyClassName="p-0">
             <Table head={["When", "Event", "Severity", "Account", "IP"]}>

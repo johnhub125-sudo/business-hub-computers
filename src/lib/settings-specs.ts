@@ -71,6 +71,12 @@ export const SETTINGS_SPECS: Record<string, { title: string; description?: strin
       { name: "lockMinutes", label: "Lock duration (minutes)", type: "number" },
       { name: "sessionDays", label: "Session length (days)", type: "number", hint: "Applies after the next deployment" },
       { name: "requireAdmin2fa", label: "Strongly require 2FA for administrators", type: "boolean" },
+      {
+        name: "requireEmailVerification",
+        label: "Customers must verify their email before signing in and ordering",
+        type: "boolean",
+        hint: "Off: customers can sign in straight after registering; staff with the “Verify customer email addresses” permission can verify them.",
+      },
     ],
   },
   seo: {

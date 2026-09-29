@@ -20,9 +20,7 @@ export default async function PendingPage() {
         <p className="mt-4 text-muted">
           {rejected
             ? "Your staff account is not active. Please contact the Super Admin if you believe this is a mistake."
-            : !me.emailVerified
-              ? "Please verify your email address first (check your inbox). The Super Admin will then review your access request."
-              : "Your request has been received. The Super Admin will review it and assign your role. You'll receive an email once approved."}
+            : "Your request has been received. The Super Admin will review it and assign your role. You'll receive an email once approved."}
         </p>
         <div className="mt-6">
           <SignOutButton />

@@ -60,7 +60,8 @@ export const auth = betterAuth({
 
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: true,
+    // Enforced per the live "requireEmailVerification" security setting in databaseHooks below.
+    requireEmailVerification: false,
     minPasswordLength: 10,
     maxPasswordLength: 128,
     autoSignIn: false,
@@ -77,7 +78,7 @@ export const auth = betterAuth({
 
   emailVerification: {
     sendOnSignUp: true,
-    sendOnSignIn: true,
+    sendOnSignIn: false, // the sign-in form requests a fresh link when verification is required
     autoSignInAfterVerification: true,
     expiresIn: 60 * 60,
     sendVerificationEmail: async ({ user, url }) => {
@@ -114,9 +115,17 @@ export const auth = betterAuth({
     session: {
       create: {
         before: async (session) => {
-          const [u] = await db.select({ status: schema.user.status }).from(schema.user).where(eq(schema.user.id, session.userId));
+          const [u] = await db
+            .select({ status: schema.user.status, emailVerified: schema.user.emailVerified })
+            .from(schema.user)
+            .where(eq(schema.user.id, session.userId));
           if (!u || BLOCKED_STATUSES.has(u.status)) {
             throw new APIError("FORBIDDEN", { message: "This account is not active. Please contact support." });
+          }
+          // Runs only after the password (and 2FA) succeeded, so it reveals nothing to strangers.
+          if (!u.emailVerified) {
+            const live = await getSetting("security").catch(() => security);
+            if (live.requireEmailVerification) throw new APIError("FORBIDDEN", { message: "Please verify your email address before signing in." });
           }
         },
       },

@@ -9,6 +9,7 @@ import { DEPARTMENTS, SUPER_ADMIN } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
 import { db } from "@/server/db";
 import { permissions, rolePermissions, roles, staffProfiles, user, userRoles } from "@/server/db/schema";
+import { syncPermissionCatalog } from "@/server/permission-catalog";
 import { requireStaffPage } from "@/server/session";
 
 export const metadata: Metadata = { title: "Staff & roles" };
@@ -16,6 +17,7 @@ export const metadata: Metadata = { title: "Staff & roles" };
 export default async function StaffPage({ searchParams }: PageProps<"/admin/staff">) {
   const me = await requireStaffPage("staff.manage");
   const tab = tabOf((await searchParams) as SP, ["pending", "staff", "roles"]);
+  await syncPermissionCatalog();
   const [allRoles, perms] = await Promise.all([db.select().from(roles).orderBy(asc(roles.name)), db.select().from(permissions).orderBy(asc(permissions.module), asc(permissions.key))]);
   const staffRows = tab !== "roles"
     ? await db

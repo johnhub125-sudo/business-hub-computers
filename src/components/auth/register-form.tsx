@@ -1,6 +1,6 @@
 "use client";
 
-import { MailCheck } from "lucide-react";
+import { MailCheck, MailWarning } from "lucide-react";
 import Link from "next/link";
 import { useActionState } from "react";
 import { registerCustomerAction } from "@/app/actions/auth";
@@ -15,6 +15,45 @@ export function RegisterForm() {
   const err = (k: string) => fe[k];
   const aria = (k: string) => ({ "aria-invalid": fe[k] ? true : undefined, "aria-describedby": fe[k] ? `${k}-error` : undefined });
 
+  if (state?.ok && !state.data.verificationRequired) {
+    return (
+      <div className="py-6 text-center">
+        <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-emerald-50 text-emerald-600">
+          <MailCheck className="size-8" aria-hidden />
+        </span>
+        <h2 className="mt-4 text-xl font-bold">Welcome aboard!</h2>
+        <p className="mx-auto mt-2 max-w-sm text-muted">
+          Your account <strong className="text-ink">{state.data.email}</strong> is ready. You can sign in now and start shopping.
+          {state.data.emailSent && " We've also emailed you a link to confirm your address."}
+        </p>
+        <Link href="/login" className="mt-6 inline-flex h-11 items-center rounded-xl bg-brand-700 px-6 font-semibold text-white hover:bg-brand-800">
+          Sign in
+        </Link>
+      </div>
+    );
+  }
+
+  if (state?.ok && !state.data.emailSent) {
+    return (
+      <div className="py-6 text-center">
+        <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-amber-50 text-amber-600">
+          <MailWarning className="size-8" aria-hidden />
+        </span>
+        <h2 className="mt-4 text-xl font-bold">Account created</h2>
+        <p className="mx-auto mt-2 max-w-sm text-muted">
+          We couldn&apos;t send the verification email to <strong className="text-ink">{state.data.email}</strong> just now. Please{" "}
+          <Link href="/contact" className="font-semibold text-brand-600 hover:underline">
+            contact us
+          </Link>{" "}
+          and we&apos;ll activate your account, or try signing in later to get a new link.
+        </p>
+        <Link href="/login" className="mt-6 inline-block font-semibold text-brand-600 hover:underline">
+          Go to sign in →
+        </Link>
+      </div>
+    );
+  }
+
   if (state?.ok) {
     return (
       <div className="py-6 text-center">
@@ -23,7 +62,7 @@ export function RegisterForm() {
         </span>
         <h2 className="mt-4 text-xl font-bold">Check your inbox</h2>
         <p className="mx-auto mt-2 max-w-sm text-muted">
-          We sent a verification link to <strong className="text-ink">{state.data.email}</strong>. Click it to activate your account, then sign in.
+          We sent a verification link to <strong className="text-ink">{state.data.email}</strong>. Click it to activate your account, then sign in. If it isn&apos;t in your inbox within a few minutes, check your spam folder.
         </p>
         <Link href="/login" className="mt-6 inline-block font-semibold text-brand-600 hover:underline">
           Go to sign in →
