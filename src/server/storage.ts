@@ -2,6 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { BlobError, get, put, del } from "@vercel/blob";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
@@ -11,9 +12,14 @@ import { UserError } from "./errors";
 import { log } from "./logger";
 
 /**
- * File storage: Vercel Blob in preview/production. In local development without a Blob token,
- * files are written to disk (public/uploads for public media, .data/uploads for private files)
- * so the app is fully usable before storage is connected. Production refuses to fall back.
+ * File storage. New uploads go to S3-compatible storage (Cloudflare R2 etc.) when S3_* is configured,
+ * otherwise to Vercel Blob. In local development with neither, files are written to disk
+ * (public/uploads for public media, .data/uploads for private files) so the app is fully usable
+ * before storage is connected. Production refuses to fall back.
+ *
+ * Stored `url` tells where a file lives: "https://…" Vercel Blob, "/media/<pathname>" public media in a
+ * private bucket/store (served by /media/[...path]), "s3:<pathname>" private S3 file, "/uploads/…" and
+ * "local-private:…" local development files.
  */
 
 export type UploadKind = "image" | "document" | "proof";
@@ -97,6 +103,52 @@ function blobTarget(asset: { url: string; pathname: string; access: string }) {
   return null; // local development file
 }
 
+/* ---------------- S3-compatible storage: one private bucket ---------------- */
+
+const S3_PREFIX = "s3:";
+let s3: S3Client | null = null;
+function s3Client() {
+  s3 ??= new S3Client({
+    region: process.env.S3_REGION || "auto", // "auto" is what Cloudflare R2 expects
+    endpoint: process.env.S3_ENDPOINT,
+    forcePathStyle: true,
+    credentials: { accessKeyId: process.env.S3_ACCESS_KEY_ID!, secretAccessKey: process.env.S3_SECRET_ACCESS_KEY! },
+  });
+  return s3;
+}
+
+async function putS3(pathname: string, body: Buffer, access: "public" | "private", contentType: string): Promise<string> {
+  await s3Client().send(new PutObjectCommand({ Bucket: process.env.S3_BUCKET, Key: pathname, Body: body, ContentType: contentType }));
+  return access === "public" ? `${MEDIA_PREFIX}${pathname}` : `${S3_PREFIX}${pathname}`;
+}
+
+/** Returns null when the object does not exist. */
+async function getS3(pathname: string): Promise<BodyInit | null> {
+  try {
+    const res = await s3Client().send(new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: pathname }));
+    return res.Body ? (res.Body.transformToWebStream() as ReadableStream) : null;
+  } catch (err) {
+    if (err instanceof S3ServiceException && (err.name === "NoSuchKey" || err.$metadata.httpStatusCode === 404)) return null;
+    throw err;
+  }
+}
+
+/**
+ * Fetches a stored asset's bytes from wherever it lives. "/media/…" rows may be in S3 or (if uploaded
+ * before S3 was configured) in a private Vercel Blob store, so S3 is tried first, then Blob.
+ */
+async function readStored(asset: { url: string; pathname: string; access: string }): Promise<BodyInit | null> {
+  if (asset.url.startsWith(S3_PREFIX)) return integrations.s3() ? getS3(asset.pathname) : null;
+  if (asset.url.startsWith(MEDIA_PREFIX) && integrations.s3()) {
+    const body = await getS3(asset.pathname);
+    if (body || !integrations.vercelBlob()) return body;
+  }
+  const target = blobTarget(asset);
+  if (!target || !integrations.vercelBlob()) return null;
+  const res = await get(target.ref, { access: target.access });
+  return res && res.statusCode === 200 ? res.stream : null;
+}
+
 export async function uploadFile(input: {
   file: File;
   kind: UploadKind;
@@ -114,12 +166,12 @@ export async function uploadFile(input: {
 
   if (integrations.blob()) {
     try {
-      url = await putBlob(pathname, Buffer.from(buf), input.access, mime);
+      url = integrations.s3() ? await putS3(pathname, Buffer.from(buf), input.access, mime) : await putBlob(pathname, Buffer.from(buf), input.access, mime);
     } catch (err) {
-      // Blob errors describe configuration problems (store, access mode, auth) and never contain secrets.
-      if (err instanceof BlobError) {
-        log.error("Blob upload failed", { err, access: input.access, folder: input.folder });
-        throw new UserError(`Upload failed — ${err.message}`);
+      // Storage errors describe configuration problems (bucket, access mode, auth) and never contain secrets.
+      if (err instanceof BlobError || err instanceof S3ServiceException) {
+        log.error("Storage upload failed", { err, access: input.access, folder: input.folder });
+        throw new UserError(`Upload failed — ${err instanceof S3ServiceException ? `${err.name}: ${err.message}` : err.message}`);
       }
       throw err;
     }
@@ -148,26 +200,26 @@ export async function readPrivateFile(pathname: string): Promise<{ body: BodyIni
     const buf = await readFile(path.join(process.cwd(), ".data", "uploads", pathname)).catch(() => null);
     return buf ? { body: new Uint8Array(buf), contentType: asset.mimeType } : null;
   }
-  const target = blobTarget(asset);
-  if (!target) return null;
-  const res = await get(target.ref, { access: target.access });
-  if (!res || res.statusCode !== 200) return null;
-  return { body: res.stream, contentType: asset.mimeType };
+  const body = await readStored(asset);
+  return body ? { body, contentType: asset.mimeType } : null;
 }
 
-/** Streams a PUBLIC asset that was stored in a private Blob store. Never returns private files. */
+/** Streams a PUBLIC asset that was stored in a private bucket/store. Never returns private files. */
 export async function readPublicMedia(pathname: string): Promise<{ body: BodyInit; contentType: string } | null> {
   const [asset] = await db.select().from(mediaAssets).where(eq(mediaAssets.pathname, pathname));
   if (!asset || asset.access !== "public" || !asset.url.startsWith(MEDIA_PREFIX)) return null;
-  const res = await get(asset.pathname, { access: "private" });
-  if (!res || res.statusCode !== 200) return null;
-  return { body: res.stream, contentType: asset.mimeType };
+  const body = await readStored(asset);
+  return body ? { body, contentType: asset.mimeType } : null;
 }
 
 export async function deleteFile(pathname: string) {
   const [asset] = await db.select().from(mediaAssets).where(eq(mediaAssets.pathname, pathname));
   if (!asset) return;
+  // Best effort in both stores: a "/media/…" row may live in either (see readStored).
+  if (integrations.s3() && (asset.url.startsWith(S3_PREFIX) || asset.url.startsWith(MEDIA_PREFIX))) {
+    await s3Client().send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key: asset.pathname })).catch(() => {});
+  }
   const target = blobTarget(asset);
-  if (integrations.blob() && target) await del(target.ref).catch(() => {});
+  if (integrations.vercelBlob() && target) await del(target.ref).catch(() => {});
   await db.delete(mediaAssets).where(eq(mediaAssets.id, asset.id));
 }

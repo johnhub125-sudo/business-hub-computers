@@ -1,4 +1,5 @@
 import "server-only";
+import { HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
 import { list } from "@vercel/blob";
 import { desc, eq, sql } from "drizzle-orm";
 import { Resend } from "resend";
@@ -37,7 +38,28 @@ export async function runHealthChecks(): Promise<HealthCheck[]> {
   });
 
   if (!integrations.blob()) {
-    checks.push({ key: "storage", name: "File storage (Vercel Blob)", status: "Not Configured", detail: appEnv() === "development" ? "Using local disk (development only)" : "Uploads are disabled until a Blob store is connected", setup: "docs/setup/vercel.md#blob" });
+    checks.push({ key: "storage", name: "File storage", status: "Not Configured", detail: appEnv() === "development" ? "Using local disk (development only)" : "Uploads are disabled until storage is connected (S3_* variables or a Vercel Blob store)", setup: "docs/setup/cloudflare-r2.md" });
+  } else if (integrations.s3()) {
+    const host = (() => {
+      try {
+        return new URL(process.env.S3_ENDPOINT!).hostname;
+      } catch {
+        return "";
+      }
+    })();
+    const name = `File storage (${/r2.cloudflarestorage.com$/.test(host) ? "Cloudflare R2" : "S3-compatible"})`;
+    try {
+      const client = new S3Client({
+        region: process.env.S3_REGION || "auto",
+        endpoint: process.env.S3_ENDPOINT,
+        forcePathStyle: true,
+        credentials: { accessKeyId: process.env.S3_ACCESS_KEY_ID!, secretAccessKey: process.env.S3_SECRET_ACCESS_KEY! },
+      });
+      await timed(() => client.send(new HeadBucketCommand({ Bucket: process.env.S3_BUCKET })));
+      checks.push({ key: "storage", name, status: "Connected", detail: `Bucket “${process.env.S3_BUCKET}” reachable` });
+    } catch (e) {
+      checks.push({ key: "storage", name, status: "Error", detail: `${(e as Error).name}: ${(e as Error).message}`.slice(0, 140), setup: "docs/setup/cloudflare-r2.md" });
+    }
   } else {
     try {
       await timed(() => list({ limit: 1 }));

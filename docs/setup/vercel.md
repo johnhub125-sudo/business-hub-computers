@@ -14,7 +14,9 @@
    DATABASE_URL="…" ADMIN_BOOTSTRAP_EMAIL=… ADMIN_BOOTSTRAP_PASSWORD='…' npm run admin:bootstrap
    ```
 
-## Blob storage {#blob}
+## File storage {#blob}
+Recommended: Cloudflare R2 — see [cloudflare-r2.md](cloudflare-r2.md). When the four `S3_*` variables are set they take priority. The alternative is Vercel Blob:
+
 Vercel → **Storage → Create → Blob** → connect to the project. This injects `BLOB_STORE_ID` (newer stores, authenticated automatically via Vercel OIDC) or `BLOB_READ_WRITE_TOKEN` (older stores) — either works.
 Product/gallery images are public; payment proofs and attachments are stored **private** and served only through `/api/files/*` after an authorisation check.
 

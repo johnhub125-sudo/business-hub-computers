@@ -23,8 +23,12 @@ export const integrations = {
   paystackTest: () => Boolean(process.env.PAYSTACK_TEST_SECRET_KEY && process.env.PAYSTACK_TEST_PUBLIC_KEY),
   paystackLive: () => Boolean(process.env.PAYSTACK_LIVE_SECRET_KEY && process.env.PAYSTACK_LIVE_PUBLIC_KEY),
   email: () => Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+  /** S3-compatible storage (Cloudflare R2, Backblaze B2, …). Takes priority over Vercel Blob for new uploads. */
+  s3: () => Boolean(process.env.S3_ENDPOINT && process.env.S3_BUCKET && process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY),
   // Newer Vercel Blob connections use OIDC + BLOB_STORE_ID instead of a read-write token; @vercel/blob accepts either.
-  blob: () => Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID),
+  vercelBlob: () => Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID),
+  /** Any file storage configured (S3-compatible or Vercel Blob). */
+  blob: (): boolean => integrations.s3() || integrations.vercelBlob(),
   maps: () => Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY),
   whatsapp: () => Boolean(process.env.WHATSAPP_API_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
   redis: () => Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN),

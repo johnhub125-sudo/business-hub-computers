@@ -25,6 +25,42 @@ vi.mock("@vercel/blob", () => {
   };
 });
 
+// Simulated S3-compatible bucket (Cloudflare R2).
+const bucket = new Map<string, Buffer>();
+let s3Fails = false;
+vi.mock("@aws-sdk/client-s3", () => {
+  class S3ServiceException extends Error {
+    $metadata: { httpStatusCode?: number };
+    constructor(o: { name: string; message: string; status?: number }) {
+      super(o.message);
+      this.name = o.name;
+      this.$metadata = { httpStatusCode: o.status };
+    }
+  }
+  class Command {
+    constructor(public input: { Key?: string; Body?: Buffer }) {}
+  }
+  class PutObjectCommand extends Command {}
+  class GetObjectCommand extends Command {}
+  class DeleteObjectCommand extends Command {}
+  class HeadBucketCommand extends Command {}
+  class S3Client {
+    async send(cmd: Command) {
+      if (s3Fails) throw new S3ServiceException({ name: "InvalidAccessKeyId", message: "The access key is not valid.", status: 403 });
+      const key = cmd.input.Key!;
+      if (cmd instanceof PutObjectCommand) return void bucket.set(key, cmd.input.Body!);
+      if (cmd instanceof DeleteObjectCommand) return void bucket.delete(key);
+      if (cmd instanceof GetObjectCommand) {
+        const b = bucket.get(key);
+        if (!b) throw new S3ServiceException({ name: "NoSuchKey", message: "Not found", status: 404 });
+        return { Body: { transformToWebStream: () => new Blob([new Uint8Array(b)]).stream() } };
+      }
+      return {};
+    }
+  }
+  return { S3Client, S3ServiceException, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand };
+});
+
 import { deleteFile, readPrivateFile, readPublicMedia, uploadFile } from "@/server/storage";
 import { resetDb } from "./support/fixtures";
 
@@ -56,5 +92,58 @@ describe("storage on a private Blob store", () => {
     expect(up.url).toMatch(/^https:\/\//);
     expect(await readPublicMedia(up.pathname)).toBeNull();
     expect((await readPrivateFile(up.pathname))?.contentType).toBe("application/pdf");
+  });
+});
+
+describe("storage on S3-compatible storage (Cloudflare R2)", () => {
+  beforeEach(async () => {
+    await resetDb();
+    blobs.clear();
+    bucket.clear();
+    s3Fails = false;
+    vi.unstubAllEnvs();
+    vi.stubEnv("S3_ENDPOINT", "https://account.r2.cloudflarestorage.com");
+    vi.stubEnv("S3_BUCKET", "bhc-test");
+    vi.stubEnv("S3_ACCESS_KEY_ID", "test-key");
+    vi.stubEnv("S3_SECRET_ACCESS_KEY", "test-secret");
+  });
+
+  it("stores public images in the bucket and serves them via /media", async () => {
+    const up = await uploadFile({ file: new File([PNG], "Team Photo.png", { type: "image/png" }), kind: "image", folder: "team", access: "public", userId: null });
+    expect(up.url).toBe(`/media/${up.pathname}`);
+    expect(bucket.has(up.pathname)).toBe(true);
+    expect(blobs.size).toBe(0);
+    expect((await readPublicMedia(up.pathname))?.contentType).toBe("image/png");
+
+    await deleteFile(up.pathname);
+    expect(bucket.has(up.pathname)).toBe(false);
+    expect(await readPublicMedia(up.pathname)).toBeNull();
+  });
+
+  it("keeps private files out of /media", async () => {
+    const up = await uploadFile({ file: new File([PDF], "proof.pdf", { type: "application/pdf" }), kind: "proof", folder: "proofs", access: "private", userId: null });
+    expect(up.url).toBe(`s3:${up.pathname}`);
+    expect(await readPublicMedia(up.pathname)).toBeNull();
+    expect((await readPrivateFile(up.pathname))?.contentType).toBe("application/pdf");
+  });
+
+  it("still serves images uploaded to Vercel Blob before the switch", async () => {
+    vi.unstubAllEnvs();
+    vi.stubEnv("BLOB_STORE_ID", "store_test");
+    const old = await uploadFile({ file: new File([PNG], "old.png", { type: "image/png" }), kind: "image", folder: "team", access: "public", userId: null });
+    expect(blobs.has(old.pathname)).toBe(true);
+
+    vi.stubEnv("S3_ENDPOINT", "https://account.r2.cloudflarestorage.com");
+    vi.stubEnv("S3_BUCKET", "bhc-test");
+    vi.stubEnv("S3_ACCESS_KEY_ID", "test-key");
+    vi.stubEnv("S3_SECRET_ACCESS_KEY", "test-secret");
+    expect((await readPublicMedia(old.pathname))?.contentType).toBe("image/png");
+  });
+
+  it("reports the storage error instead of a generic failure", async () => {
+    s3Fails = true;
+    await expect(uploadFile({ file: new File([PNG], "x.png", { type: "image/png" }), kind: "image", folder: "team", access: "public", userId: null })).rejects.toThrow(
+      "Upload failed — InvalidAccessKeyId: The access key is not valid.",
+    );
   });
 });

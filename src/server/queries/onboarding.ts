@@ -21,7 +21,7 @@ export async function onboardingChecklist() {
     { key: "banks", label: "Bank accounts verified", done: (await count(db.select({ n: sql<number>`count(*)::int` }).from(paymentAccounts).where(eq(paymentAccounts.isActive, true)))) > 0 && settingKeys.has("payments"), href: "/admin/settings?tab=payments" },
     { key: "paystack", label: "Paystack keys configured", done: ps.configured, href: "/admin/settings?tab=payments" },
     { key: "email", label: "Transactional email (Resend)", done: integrations.email(), href: "/admin/security" },
-    { key: "storage", label: "File storage (Vercel Blob)", done: integrations.blob(), href: "/admin/security" },
+    { key: "storage", label: "File storage (Cloudflare R2 or Vercel Blob)", done: integrations.blob(), href: "/admin/security" },
     { key: "notifications", label: "Admin alert email", done: settingKeys.has("notifications"), href: "/admin/settings?tab=notifications" },
     { key: "policies", label: "Policies reviewed", done: (await count(db.select({ n: sql<number>`count(*)::int` }).from(contentPages).where(sql`${contentPages.updatedBy} IS NOT NULL`))) > 0, href: "/admin/content?tab=pages" },
     { key: "seo", label: "SEO defaults", done: settingKeys.has("seo"), href: "/admin/settings?tab=seo" },

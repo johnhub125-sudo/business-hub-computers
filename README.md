@@ -70,7 +70,7 @@ npm run dev                         # http://localhost:3000   admin: /admin/logi
 ## Deployment (Vercel)
 
 1. Push this repository to GitHub and import it in Vercel (framework: Next.js).
-2. Add integrations from **Vercel → Storage / Marketplace**: Neon (sets `DATABASE_URL`), Blob (sets `BLOB_STORE_ID` or `BLOB_READ_WRITE_TOKEN`), optionally Upstash Redis.
+2. Add integrations from **Vercel → Storage / Marketplace**: Neon (sets `DATABASE_URL`), file storage — Cloudflare R2 (`S3_*`, see docs/setup/cloudflare-r2.md) or Vercel Blob, optionally Upstash Redis.
 3. Set the remaining variables from `.env.example` for **Preview** (Paystack *test* keys) and **Production** (live keys only here).
 4. Run migrations against the target database before promoting: `DATABASE_URL=… npm run db:migrate` (then `npm run db:seed` once, **without** `--demo`, and `npm run admin:bootstrap`).
 5. Deploy a Preview, run through the checklist below, then promote to Production.
