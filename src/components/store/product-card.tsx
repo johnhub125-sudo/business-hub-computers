@@ -7,6 +7,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { addToCartAction, toggleCompareAction, toggleWishlistAction } from "@/app/actions/store";
 import { Stars } from "@/components/ui/misc";
+import { Tilt } from "@/components/ui/tilt";
 import { discountPercent, formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { ProductCardData } from "@/server/queries/catalog";
@@ -72,7 +73,8 @@ export function ProductCard({ p, wished = false, priority = false }: { p: Produc
   }
 
   return (
-    <article className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-white transition duration-200 hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-[var(--shadow-lift)]">
+    <Tilt max={5} className="card-3d h-full rounded-2xl">
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-white transition-colors duration-200 hover:border-brand-200">
       <div className="absolute left-2.5 top-2.5 z-10 flex flex-col items-start gap-1">
         <span className={cn("rounded-md px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide", p.conditionSlug === "brand-new" ? "bg-brand-700 text-white" : "bg-accent-500 text-white")}>{p.condition}</span>
         {p.isNewArrival && <span className="rounded-md bg-emerald-600 px-2 py-0.5 text-[10.5px] font-bold uppercase text-white">New</span>}
@@ -87,7 +89,7 @@ export function ProductCard({ p, wished = false, priority = false }: { p: Produc
         </button>
       </div>
       <Link href={`/products/${p.slug}`} className="relative block aspect-square overflow-hidden bg-surface" tabIndex={-1} aria-hidden>
-        <ProductImage src={p.image} alt="" fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw" priority={priority} className="p-3 transition duration-300 group-hover:scale-[1.04]" />
+        <ProductImage src={p.image} alt="" fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw" priority={priority} className="p-2.5 transition duration-300 group-hover:scale-[1.05]" />
       </Link>
       <div className="flex flex-1 flex-col p-3 sm:p-3.5">
         {p.brand && <p className="text-[11.5px] font-semibold uppercase tracking-wide text-brand-500">{p.brand}</p>}
@@ -129,6 +131,7 @@ export function ProductCard({ p, wished = false, priority = false }: { p: Produc
         </div>
       </div>
     </article>
+    </Tilt>
   );
 }
 

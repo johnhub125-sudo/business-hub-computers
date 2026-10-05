@@ -4,9 +4,10 @@ import { FileUp, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { bulkProductsAction, importProductsAction } from "@/app/admin/actions/products";
+import { bulkProductsAction } from "@/app/admin/actions/products";
+import { ProductImport } from "./product-import";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/misc";
 import { formatMoney } from "@/lib/money";
@@ -59,7 +60,7 @@ export function ProductsTable({ rows, categories, canEdit, canDelete, canImport 
           </Button>
         </div>
       )}
-      {importOpen && <ImportPanel onClose={() => setImportOpen(false)} />}
+      {importOpen && <ProductImport onClose={() => setImportOpen(false)} className="mb-4" />}
       {selected.size > 0 && canEdit && (
         <div className="sticky top-16 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 p-3 text-sm">
           <strong>{selected.size} selected</strong>
@@ -186,71 +187,6 @@ export function ProductsTable({ rows, categories, canEdit, canDelete, canImport 
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function ImportPanel({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
-  const form = useRef<HTMLFormElement>(null);
-  const [pending, start] = useTransition();
-  const [result, setResult] = useState<{ ok: boolean; errors: { row: number; message: string }[]; count: number; created: number; updated: number } | null>(null);
-  const [validated, setValidated] = useState(false);
-
-  function submit(dryRun: boolean) {
-    const fd = new FormData(form.current!);
-    fd.set("dryRun", dryRun ? "1" : "0");
-    start(async () => {
-      const r = await importProductsAction(fd);
-      if (!r.ok) return void toast.error(r.error);
-      setResult(r.data);
-      setValidated(dryRun && r.data.ok);
-      if (!dryRun && r.data.ok) {
-        toast.success(`Imported: ${r.data.created} created, ${r.data.updated} updated`);
-        router.refresh();
-      }
-    });
-  }
-
-  return (
-    <div className="mb-4 rounded-2xl border border-line bg-white p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="font-bold">Import products from CSV</h2>
-          <p className="mt-1 text-sm text-muted">
-            Columns: <code className="rounded bg-surface px-1">sku, name, brand, category, condition, price, discount_price, purchase_price, stock, short_description, description, warranty, status</code>. Existing SKUs are updated. The file is fully
-            validated before anything is saved.
-          </p>
-        </div>
-        <button onClick={onClose} className="rounded p-1 hover:bg-surface" aria-label="Close import">
-          <X className="size-4" />
-        </button>
-      </div>
-      <form ref={form} className="mt-4 flex flex-wrap items-center gap-2" onSubmit={(e) => e.preventDefault()}>
-        <input name="file" type="file" accept=".csv,text/csv" required onChange={() => { setValidated(false); setResult(null); }} className="text-sm" aria-label="CSV file" />
-        <Button type="button" variant="outline" size="sm" loading={pending && !validated} onClick={() => submit(true)}>
-          Validate
-        </Button>
-        <Button type="button" size="sm" disabled={!validated || pending} onClick={() => submit(false)}>
-          Import {result?.count ?? ""} rows
-        </Button>
-        <Link href="/admin/export/products" prefetch={false} className="ml-auto text-sm font-semibold text-brand-600 hover:underline">
-          Download current products as a template
-        </Link>
-      </form>
-      {result && (
-        <div className={cn("mt-3 rounded-xl p-3 text-sm", result.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700")}>
-          {result.ok ? (
-            validated ? `✓ ${result.count} rows are valid and ready to import.` : `Imported ${result.created} new and updated ${result.updated} products.`
-          ) : (
-            <ul className="max-h-48 list-disc space-y-0.5 overflow-y-auto pl-5">
-              {result.errors.map((e, i) => (
-                <li key={i}>{e.row ? `Row ${e.row}: ` : ""}{e.message}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
     </div>
   );
 }

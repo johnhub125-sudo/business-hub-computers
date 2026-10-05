@@ -2,6 +2,8 @@
 
 import { PlayCircle } from "lucide-react";
 import { useState } from "react";
+import { Tilt } from "@/components/ui/tilt";
+import { isProductArt } from "@/lib/product-kind";
 import { cn } from "@/lib/utils";
 import { ProductImage } from "./product-image";
 
@@ -58,6 +60,13 @@ export function ProductGallery({ images, videos, name, variantImage }: { images:
             <video src={video.url} controls className="size-full bg-black object-contain" />
           )
         ) : (
+          isProductArt(current.url) ? (
+            // Automatic 3D picture: tilt it with the mouse, or drag on a phone.
+            <Tilt max={16} drag className="size-full cursor-grab active:cursor-grabbing">
+              <ProductImage src={current.url} alt={current.alt ?? name} fill priority sizes="(max-width: 1024px) 100vw, 50vw" className="p-5 drop-shadow-xl" />
+              <span className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-950/75 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur">3D preview · move to tilt</span>
+            </Tilt>
+          ) : (
           <div
             className="relative size-full cursor-zoom-in"
             onMouseMove={(e) => {
@@ -76,6 +85,7 @@ export function ProductGallery({ images, videos, name, variantImage }: { images:
               style={zoom ? { transform: "scale(2)", transformOrigin: `${zoom.x}% ${zoom.y}%` } : undefined}
             />
           </div>
+          )
         )}
       </div>
     </div>

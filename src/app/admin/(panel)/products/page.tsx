@@ -6,6 +6,8 @@ import { AdminHeader, FilterBar, FilterInput, FilterSelect, one, pageOf, qsWith,
 import { ButtonLink } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/misc";
 import { db } from "@/server/db";
+import { productImage } from "@/server/product-art-url";
+import { photoExpr } from "@/server/queries/catalog";
 import { brands, categories, productConditions, products } from "@/server/db/schema";
 import { can, requireStaffPage } from "@/server/session";
 
@@ -49,7 +51,8 @@ export default async function AdminProductsPage({ searchParams }: PageProps<"/ad
         brand: brands.name,
         stock: stockExpr,
         minStock: products.minStockLevel,
-        image: sql<string | null>`(SELECT url FROM product_images WHERE product_id = ${products.id} ORDER BY sort_order LIMIT 1)`,
+        image: photoExpr,
+        specs: products.specifications,
         variants: sql<number>`(SELECT count(*) FROM product_variants v WHERE v.product_id = ${products.id} AND v.is_active)::int`,
       })
       .from(products)
@@ -92,7 +95,7 @@ export default async function AdminProductsPage({ searchParams }: PageProps<"/ad
         <FilterSelect name="condition" label="Condition" defaultValue={cond} options={conds.map((c) => [c.id, c.name])} />
         <FilterSelect name="stock" label="Stock" defaultValue={stock} options={[["low", "Low stock"], ["out", "Out of stock"]]} />
       </FilterBar>
-      <ProductsTable rows={rows} categories={cats} canEdit={can(staff, "products.edit")} canDelete={can(staff, "products.delete")} canImport={can(staff, "products.create")} />
+      <ProductsTable rows={rows.map(({ specs, ...r }) => ({ ...r, image: productImage(r.image, { name: r.name, brand: r.brand, category: r.category, condition: r.condition, specs }, true) }))} categories={cats} canEdit={can(staff, "products.edit")} canDelete={can(staff, "products.delete")} canImport={can(staff, "products.create")} />
       <Pagination page={page} pages={Math.ceil(total / PER)} hrefFor={(p) => qsWith("/admin/products", sp, { page: p > 1 ? String(p) : undefined })} />
     </div>
   );

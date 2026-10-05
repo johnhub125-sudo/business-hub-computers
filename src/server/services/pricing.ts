@@ -1,6 +1,8 @@
 import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { isPlaceholderImage } from "@/lib/product-kind";
 import { applyBps, type Kobo } from "@/lib/money";
+import { productArtUrls } from "../product-art-url";
 import { db, type Executor } from "../db";
 import {
   couponRedemptions,
@@ -135,7 +137,9 @@ export async function quote(opts: QuoteOptions, tx: Executor = db): Promise<Quot
     .from(productImages)
     .where(inArray(productImages.productId, rows.map((r) => r.productId)))
     .orderBy(productImages.productId, productImages.sortOrder);
-  const imageByProduct = new Map(images.map((i) => [i.productId, i.url]));
+  const imageByProduct = new Map(images.filter((i) => !isPlaceholderImage(i.url)).map((i) => [i.productId, i.url]));
+  // Products without a real photo get the automatic picture.
+  const art = await productArtUrls([...new Set(rows.filter((r) => !r.variantImage && !imageByProduct.has(r.productId)).map((r) => r.productId))], tx);
 
   const activeDiscounts = (await tx.select().from(discounts).where(eq(discounts.isActive, true))).filter((d) =>
     isLive(d.startsAt, d.endsAt, now),
@@ -179,7 +183,7 @@ export async function quote(opts: QuoteOptions, tx: Executor = db): Promise<Quot
       productSlug: r.productSlug,
       variantName: r.variantName,
       sku: r.variantSku,
-      image: r.variantImage ?? imageByProduct.get(r.productId) ?? null,
+      image: r.variantImage ?? imageByProduct.get(r.productId) ?? art.get(r.productId) ?? null,
       quantity,
       listPrice,
       unitPrice,

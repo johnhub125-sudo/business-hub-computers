@@ -88,5 +88,28 @@ export const SETTINGS_SPECS: Record<string, { title: string; description?: strin
       { name: "ogImage", label: "Social share image", type: "image" },
     ],
   },
+  storefront: {
+    title: "Storefront & effects",
+    description: "How the shop front moves. Every effect is lightweight (no heavy 3D libraries) and switches itself off for visitors who prefer reduced motion.",
+    fields: [
+      {
+        name: "carouselEffect",
+        label: "Carousel animation",
+        type: "select",
+        options: [
+          ["cube", "3D turn (recommended)"],
+          ["slide", "Slide"],
+          ["zoom", "Zoom"],
+          ["fade", "Fade"],
+        ],
+      },
+      { name: "carouselSeconds", label: "Seconds per slide", type: "number", hint: "3 to 20" },
+      { name: "carouselAutoplay", label: "Carousel plays automatically", type: "boolean" },
+      { name: "heroShowcase", label: "Show a floating 3D product in the carousel", type: "boolean", hint: "Cycles through your Featured products" },
+      { name: "cardTilt", label: "Product cards tilt in 3D under the pointer", type: "boolean" },
+      { name: "scrollEffects", label: "Sections rise into view while scrolling", type: "boolean" },
+      { name: "installPrompt", label: "Invite visitors to install the shop as an app", type: "boolean", hint: "A small banner; one tap on Android/Chrome/Edge, short instructions on iPhone" },
+    ],
+  },
   analytics: { title: "Analytics", fields: [{ name: "vercelAnalytics", label: "Vercel Web Analytics", type: "boolean" }, { name: "speedInsights", label: "Vercel Speed Insights", type: "boolean" }] },
 };

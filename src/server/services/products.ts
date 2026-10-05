@@ -248,58 +248,138 @@ export async function bulkUpdate(ids: string[], op: { kind: "status"; status: "d
   });
 }
 
-/* ───────────── CSV import (validated before any write) ───────────── */
+/* ───────────── Excel / CSV import (validated before any write) ───────────── */
 
-export const IMPORT_COLUMNS = ["sku", "name", "brand", "category", "condition", "price", "discount_price", "purchase_price", "stock", "short_description", "description", "warranty", "status"] as const;
+export const IMPORT_COLUMNS = ["sku", "name", "category", "subcategory", "brand", "condition", "price", "discount_price", "purchase_price", "stock", "short_description", "description", "specifications", "warranty", "featured", "deal", "new_arrival", "best_seller", "status"] as const;
+
+/** Friendly column names for error messages. */
+const IMPORT_LABELS: Record<string, string> = { sku: "SKU", name: "Product name", category: "Category", subcategory: "Subcategory", brand: "Brand", condition: "Condition", price: "Price", discount_price: "Discount price", purchase_price: "Cost price", stock: "Stock quantity", short_description: "Short description", description: "Full description", specifications: "Specifications", warranty: "Warranty", featured: "Featured", deal: "Deal", new_arrival: "New arrival", best_seller: "Best seller", status: "Status" };
+
+/** "Yes"/"No" cells. Blank stays undefined so an update never switches a flag off by accident. */
+const yesNo = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v, ctx) => {
+    if (!v) return undefined;
+    if (/^(y|yes|true|1)$/i.test(v)) return true;
+    if (/^(n|no|false|0)$/i.test(v)) return false;
+    ctx.addIssue({ code: "custom", message: "use Yes or No" });
+    return z.NEVER;
+  });
+
+/** "Processor: Core i5; RAM: 8GB" → { Processor: "Core i5", RAM: "8GB" } */
+export function parseSpecifications(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of text.split(/[;\n]+/)) {
+    const i = part.indexOf(":");
+    if (i < 1) continue;
+    const key = part.slice(0, i).trim().slice(0, 60);
+    const value = part.slice(i + 1).trim().slice(0, 300);
+    if (key && value && Object.keys(out).length < 40) out[key] = value;
+  }
+  return out;
+}
 
 const importRow = z.object({
-  sku: z.string().trim().min(2).max(64).regex(/^[A-Za-z0-9._-]+$/),
+  sku: z.string().trim().min(2).max(64).regex(/^[A-Za-z0-9._-]+$/, "letters, numbers, . _ - only"),
   name: z.string().trim().min(3).max(200),
   brand: z.string().trim().max(60).optional().default(""),
-  category: z.string().trim().min(1),
-  condition: z.string().trim().min(1),
+  category: z.string().trim().min(1, "required"),
+  subcategory: z.string().trim().max(80).optional().default(""),
+  condition: z.string().trim().min(1, "required"),
   price: naira.refine((v) => v != null && v > 0, "price required"),
   discount_price: naira.nullable().optional(),
   purchase_price: naira.nullable().optional(),
   stock: z.coerce.number().int().min(0).max(100000).optional().default(0),
   short_description: z.string().trim().max(500).optional().default(""),
   description: z.string().trim().max(20000).optional().default(""),
+  specifications: z.string().trim().max(4000).optional().default(""),
   warranty: z.string().trim().max(200).optional().default(""),
-  status: z.enum(["draft", "active", "archived"]).optional().default("draft"),
+  featured: yesNo,
+  deal: yesNo,
+  new_arrival: yesNo,
+  best_seller: yesNo,
+  // Blank = Active, so an imported product appears in the shop straight away.
+  status: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .optional()
+    .transform((v) => v || "active")
+    .pipe(z.enum(["draft", "active", "archived"])),
 });
 
-export async function importProducts(rows: Record<string, string>[], staff: Pick<StaffContext, "id" | "email" | "roleLabel">, dryRun: boolean) {
-  if (!rows.length) throw new UserError("The file has no data rows.");
+export type ImportResult = { ok: boolean; errors: { row: number; message: string }[]; notes: string[]; count: number; created: number; updated: number };
+
+export async function importProducts(rows: Record<string, string>[], staff: Pick<StaffContext, "id" | "email" | "roleLabel">, dryRun: boolean): Promise<ImportResult> {
+  if (!rows.length) throw new UserError("The file has no product rows.");
   if (rows.length > 2000) throw new UserError("Import at most 2,000 rows at a time.");
   const [cats, conds, brs] = await Promise.all([db.select().from(categories), db.select().from(productConditions), db.select().from(brands)]);
   const find = <T extends { name: string; slug: string }>(list: T[], v: string) => list.find((x) => x.slug === slugify(v) || x.name.toLowerCase() === v.toLowerCase());
   const errors: { row: number; message: string }[] = [];
-  const parsed: (z.infer<typeof importRow> & { categoryId: string; conditionId: string; brandId: string | null })[] = [];
+  const parsed: (z.infer<typeof importRow> & { categoryId: string; subcategoryId: string | null; conditionId: string; brandKey: string | null; specs: Record<string, string> })[] = [];
+  const newBrands = new Map<string, string>(); // slug → name as typed
   rows.forEach((r, i) => {
+    const row = Number(r.__row) || i + 2;
     const res = importRow.safeParse(r);
-    if (!res.success) return void errors.push({ row: i + 2, message: res.error.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ") });
-    const cat = find(cats, res.data.category);
-    const cond = find(conds, res.data.condition);
-    const br = res.data.brand ? find(brs, res.data.brand) : null;
-    if (!cat) errors.push({ row: i + 2, message: `Unknown category “${res.data.category}”` });
-    if (!cond) errors.push({ row: i + 2, message: `Unknown condition “${res.data.condition}”` });
-    if (res.data.brand && !br) errors.push({ row: i + 2, message: `Unknown brand “${res.data.brand}” (create it first)` });
-    if (res.data.discount_price != null && res.data.discount_price > res.data.price!) errors.push({ row: i + 2, message: "discount_price is above price" });
-    if (cat && cond) parsed.push({ ...res.data, categoryId: cat.id, conditionId: cond.id, brandId: br?.id ?? null });
+    const fail = (message: string) => {
+      errors.push({ row, message });
+      return undefined;
+    };
+    if (!res.success) {
+      fail(res.error.issues.map((x) => `${IMPORT_LABELS[String(x.path[0])] ?? x.path.join(".")}: ${x.message}`).join("; "));
+      // Still report an unknown category/condition, so one check shows everything wrong with the row.
+      if (r.category?.trim() && !find(cats, r.category.trim())) fail(`Unknown category “${r.category.trim()}” — choose one from the dropdown`);
+      if (r.condition?.trim() && !find(conds, r.condition.trim())) fail(`Unknown condition “${r.condition.trim()}” — choose one from the dropdown`);
+      return;
+    }
+    const d = res.data;
+    const cat = find(cats.filter((c) => !c.parentId), d.category) ?? find(cats, d.category) ?? fail(`Unknown category “${d.category}” — choose one from the dropdown`);
+    const cond = find(conds, d.condition) ?? fail(`Unknown condition “${d.condition}” — choose one from the dropdown`);
+    let subcategoryId: string | null = null;
+    let ok = Boolean(cat && cond);
+    if (d.subcategory && cat) {
+      const sub = find(cats.filter((c) => c.parentId === cat.id), d.subcategory) ?? fail(`“${d.subcategory}” is not a subcategory of ${cat.name}`);
+      if (sub) subcategoryId = sub.id;
+      else ok = false;
+    }
+    if (d.discount_price != null && d.discount_price > d.price!) {
+      fail("Discount price is above the price");
+      ok = false;
+    }
+    let brandKey: string | null = null;
+    if (d.brand) {
+      const existing = find(brs, d.brand);
+      brandKey = existing?.slug ?? (slugify(d.brand) || null);
+      if (!brandKey) {
+        fail(`Brand “${d.brand}” is not a usable name`);
+        ok = false;
+      } else if (!existing && !newBrands.has(brandKey)) newBrands.set(brandKey, d.brand);
+    }
+    if (ok && cat && cond) parsed.push({ ...d, categoryId: cat.id, subcategoryId, conditionId: cond.id, brandKey, specs: parseSpecifications(d.specifications) });
   });
   const dupes = parsed.map((p) => p.sku.toUpperCase()).filter((s, i, a) => a.indexOf(s) !== i);
-  if (dupes.length) errors.push({ row: 0, message: `Duplicate SKUs in file: ${[...new Set(dupes)].join(", ")}` });
-  if (errors.length || dryRun) return { ok: errors.length === 0, errors, count: parsed.length, created: 0, updated: 0 };
+  if (dupes.length) errors.push({ row: 0, message: `The same SKU appears more than once in the file: ${[...new Set(dupes)].join(", ")}` });
+  const notes = newBrands.size ? [`${newBrands.size} new brand(s) will be created: ${[...newBrands.values()].join(", ")}`] : [];
+  if (errors.length || dryRun) return { ok: errors.length === 0, errors, notes, count: parsed.length, created: 0, updated: 0 };
 
   let created = 0;
   let updated = 0;
   await db.transaction(async (tx) => {
+    const brandIds = new Map(brs.map((b) => [b.slug, b.id]));
+    for (const [slug, name] of newBrands) {
+      const [b] = await tx.insert(brands).values({ name, slug }).onConflictDoUpdate({ target: brands.slug, set: { slug } }).returning({ id: brands.id });
+      brandIds.set(slug, b.id);
+    }
     for (const p of parsed) {
       const [existing] = await tx.select({ id: products.id }).from(products).where(eq(products.sku, p.sku));
+      const flags = { isFeatured: p.featured, isDeal: p.deal, isNewArrival: p.new_arrival, isBestSeller: p.best_seller };
       const base = {
         name: p.name,
-        brandId: p.brandId,
+        brandId: p.brandKey ? (brandIds.get(p.brandKey) ?? null) : null,
         categoryId: p.categoryId,
+        subcategoryId: p.subcategoryId,
         conditionId: p.conditionId,
         price: p.price!,
         discountPrice: p.discount_price ?? null,
@@ -311,17 +391,35 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
         updatedAt: new Date(),
       };
       if (existing) {
-        await tx.update(products).set(base).where(eq(products.id, existing.id));
+        // Blank cells never wipe specifications or switch flags off on an existing product.
+        const keep = Object.fromEntries(Object.entries(flags).filter(([, v]) => v !== undefined));
+        await tx
+          .update(products)
+          .set({ ...base, ...keep, ...(Object.keys(p.specs).length ? { specifications: p.specs } : {}) })
+          .where(eq(products.id, existing.id));
         updated++;
       } else {
-        const [np] = await tx.insert(products).values({ ...base, sku: p.sku, slug: await uniqueProductSlug(tx, p.name, null), createdBy: staff.id }).returning({ id: products.id });
+        const [np] = await tx
+          .insert(products)
+          .values({
+            ...base,
+            specifications: p.specs,
+            isFeatured: p.featured ?? false,
+            isDeal: p.deal ?? false,
+            isNewArrival: p.new_arrival ?? false,
+            isBestSeller: p.best_seller ?? false,
+            sku: p.sku,
+            slug: await uniqueProductSlug(tx, p.name, null),
+            createdBy: staff.id,
+          })
+          .returning({ id: products.id });
         const [v] = await tx.insert(productVariants).values({ productId: np.id, sku: `${p.sku}-STD`, isDefault: true }).returning({ id: productVariants.id });
         await tx.insert(inventory).values({ variantId: v.id });
-        if (p.stock > 0) await adjustStock(tx, { variantId: v.id, delta: p.stock, type: "purchase", referenceType: "import", referenceId: np.id, userId: staff.id, note: "CSV import opening stock" });
+        if (p.stock > 0) await adjustStock(tx, { variantId: v.id, delta: p.stock, type: "purchase", referenceType: "import", referenceId: np.id, userId: staff.id, note: "Import opening stock" });
         created++;
       }
     }
-    await audit({ actor: staff, action: "product.imported", module: "Products", description: `CSV import: ${created} created, ${updated} updated` }, tx);
+    await audit({ actor: staff, action: "product.imported", module: "Products", description: `Product import: ${created} created, ${updated} updated${newBrands.size ? `, ${newBrands.size} brand(s) added` : ""}` }, tx);
   });
-  return { ok: true, errors: [], count: parsed.length, created, updated };
+  return { ok: true, errors: [], notes: [], count: parsed.length, created, updated };
 }

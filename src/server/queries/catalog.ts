@@ -1,7 +1,8 @@
 import "server-only";
-import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, ne, notLike, or, sql, type SQL } from "drizzle-orm";
 import { cache } from "react";
 import { db } from "../db";
+import { productImage } from "../product-art-url";
 import {
   brands,
   categories,
@@ -21,7 +22,8 @@ const listPriceExpr = sql<number>`coalesce((SELECT v.price FROM product_variants
 const salePriceExpr = sql<number | null>`(SELECT CASE WHEN v.price IS NOT NULL THEN v.discount_price ELSE coalesce(v.discount_price, ${products.discountPrice}) END FROM product_variants v WHERE v.product_id = ${products.id} AND v.is_active ORDER BY v.is_default DESC, v.sort_order LIMIT 1)`;
 const effectivePriceExpr = sql<number>`coalesce(${salePriceExpr}, ${listPriceExpr})`;
 const stockExpr = sql<number>`coalesce((SELECT sum(greatest(i.on_hand - i.reserved, 0)) FROM inventory i JOIN product_variants v ON v.id = i.variant_id WHERE v.product_id = ${products.id} AND v.is_active), 0)::int`;
-const imageExpr = sql<string | null>`(SELECT pi.url FROM product_images pi WHERE pi.product_id = ${products.id} ORDER BY pi.sort_order LIMIT 1)`;
+/** First real photo, if any (seeded demo illustrations don't count). Without one, `productImage()` supplies the automatic picture. */
+export const photoExpr = sql<string | null>`(SELECT pi.url FROM product_images pi WHERE pi.product_id = ${products.id} AND pi.url NOT LIKE '/images/catalog/%' ORDER BY pi.sort_order LIMIT 1)`;
 const defaultVariantExpr = sql<string | null>`(SELECT v.id FROM product_variants v WHERE v.product_id = ${products.id} AND v.is_active ORDER BY v.is_default DESC, v.sort_order LIMIT 1)`;
 const variantCountExpr = sql<number>`(SELECT count(*)::int FROM product_variants v WHERE v.product_id = ${products.id} AND v.is_active)`;
 
@@ -38,7 +40,10 @@ export const cardFields = {
   rating: products.ratingAverage,
   ratingCount: products.ratingCount,
   stock: stockExpr,
-  image: imageExpr,
+  image: photoExpr,
+  // Only used to draw the automatic picture; removed again in normaliseCard.
+  artCategory: categories.name,
+  artSpecs: products.specifications,
   variantCount: variantCountExpr,
   variantId: defaultVariantExpr,
   isDeal: products.isDeal,
@@ -62,7 +67,7 @@ export type ProductCardData = {
   rating: string;
   ratingCount: number;
   stock: number;
-  image: string | null;
+  image: string;
   variantCount: number;
   variantId: string | null;
   isDeal: boolean;
@@ -73,9 +78,12 @@ export type ProductCardData = {
   createdAt: Date;
 };
 
-function normaliseCard(r: Record<string, unknown>): ProductCardData {
+function normaliseCard(row: Record<string, unknown>): ProductCardData {
+  const { artCategory, artSpecs, ...r } = row as Record<string, unknown> & { artCategory: string; artSpecs: Record<string, string> };
+  const c = r as ProductCardData & { image: string | null };
   return {
-    ...(r as ProductCardData),
+    ...c,
+    image: productImage(c.image, { name: c.name, brand: c.brand, category: artCategory, condition: c.condition, specs: artSpecs }, true),
     listPrice: Number(r.listPrice),
     salePrice: r.salePrice == null ? null : Number(r.salePrice),
     stock: Number(r.stock),
@@ -263,13 +271,16 @@ export async function searchSuggestions(q: string) {
   const term = q.trim().slice(0, 60);
   if (term.length < 2) return [];
   const like = `%${term.replace(/[%_]/g, "")}%`;
-  return db
-    .select({ name: products.name, slug: products.slug, image: imageExpr, price: effectivePriceExpr, brand: brands.name })
+  const rows = await db
+    .select({ name: products.name, slug: products.slug, image: photoExpr, price: effectivePriceExpr, brand: brands.name, category: categories.name, condition: productConditions.name, specs: products.specifications })
     .from(products)
+    .innerJoin(categories, eq(categories.id, products.categoryId))
+    .innerJoin(productConditions, eq(productConditions.id, products.conditionId))
     .leftJoin(brands, eq(brands.id, products.brandId))
     .where(and(visible, or(ilike(products.name, like), ilike(products.sku, like), ilike(brands.name, like))))
     .orderBy(desc(products.soldCount))
     .limit(6);
+  return rows.map(({ category, condition, specs, ...r }) => ({ ...r, image: productImage(r.image, { name: r.name, brand: r.brand, category, condition, specs }, true) }));
 }
 
 /* ─────────────── product detail ─────────────── */
@@ -306,7 +317,7 @@ export const getProductBySlug = cache(async (slug: string) => {
       .leftJoin(inventory, eq(inventory.variantId, productVariants.id))
       .where(and(eq(productVariants.productId, p.product.id), eq(productVariants.isActive, true)))
       .orderBy(asc(productVariants.sortOrder)),
-    db.select().from(productImages).where(eq(productImages.productId, p.product.id)).orderBy(asc(productImages.sortOrder)),
+    db.select().from(productImages).where(and(eq(productImages.productId, p.product.id), notLike(productImages.url, "/images/catalog/%"))).orderBy(asc(productImages.sortOrder)),
     db.select().from(productVideos).where(eq(productVideos.productId, p.product.id)).orderBy(asc(productVideos.sortOrder)),
     p.product.subcategoryId ? db.select().from(categories).where(eq(categories.id, p.product.subcategoryId)) : Promise.resolve([]),
   ]);

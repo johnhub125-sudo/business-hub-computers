@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ProductImage } from "@/components/store/product-image";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, StatusBadge } from "@/components/ui/misc";
+import { isPlaceholderImage } from "@/lib/product-kind";
+import { productArtUrls } from "@/server/product-art-url";
 import { formatMoney } from "@/lib/money";
 import { ORDER_STATUS, PAYMENT_STATUS } from "@/lib/status";
 import { formatDate } from "@/lib/utils";
@@ -22,7 +24,8 @@ export default async function OrdersPage() {
   const imgs = productIds.length
     ? await db.selectDistinctOn([productImages.productId], { productId: productImages.productId, url: productImages.url }).from(productImages).where(inArray(productImages.productId, productIds)).orderBy(productImages.productId, productImages.sortOrder)
     : [];
-  const img = new Map(imgs.map((i) => [i.productId, i.url]));
+  const img = new Map(imgs.filter((i) => !isPlaceholderImage(i.url)).map((i) => [i.productId, i.url]));
+  for (const [id, url] of await productArtUrls(productIds.filter((id) => !img.has(id)))) img.set(id, url);
   return (
     <div>
       <h1 className="mb-5 font-display text-2xl font-extrabold">My orders</h1>

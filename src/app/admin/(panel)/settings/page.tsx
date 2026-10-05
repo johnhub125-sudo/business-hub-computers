@@ -12,6 +12,7 @@ export const metadata: Metadata = { title: "Settings" };
 
 const TABS: [string, string][] = [
   ["company", "Company"],
+  ["storefront", "Storefront & effects"],
   ["branches", "Locations & social"],
   ["tax", "VAT"],
   ["payments", "Payments"],
@@ -29,6 +30,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/admin/s
   const ps = tab === "payments" ? await paystackConfig() : null;
   const sections: Record<string, string[]> = {
     company: ["company"],
+    storefront: ["storefront"],
     tax: ["tax"],
     payments: ["payments"],
     orders: ["orders", "inventory"],

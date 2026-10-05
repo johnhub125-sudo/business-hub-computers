@@ -111,3 +111,94 @@ body {
 .prose-content li { margin: 0.25rem 0; line-height: 1.7; }
 .prose-content a { color: var(--color-brand-600); text-decoration: underline; }
 .prose-content strong { color: var(--color-ink); }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 3D & motion. Everything here is CSS transforms and opacity (GPU-composited),
+ * so it adds no JavaScript weight. Admin → Settings → Storefront & effects.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/* Tilt towards the pointer (see components/ui/tilt.tsx) */
+.tilt {
+  position: relative;
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tilt[data-active] { transition: transform 0.08s linear; will-change: transform; }
+.tilt-glare {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s;
+  background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), rgb(255 255 255 / 0.38), transparent 55%);
+}
+.tilt[data-active] > .tilt-glare { opacity: 1; }
+.tilt-pop { transform: translateZ(36px); }
+
+/* A product gently turning in space */
+@keyframes float-3d {
+  0%, 100% { transform: translateY(0) rotateY(-16deg) rotateX(5deg); }
+  50% { transform: translateY(-14px) rotateY(12deg) rotateX(-3deg); }
+}
+.float-3d { animation: float-3d 7s ease-in-out infinite; transform-style: preserve-3d; }
+@keyframes pop-in {
+  from { opacity: 0; transform: perspective(900px) translateY(30px) rotateY(50deg) scale(0.8); }
+  to { opacity: 1; transform: none; }
+}
+.hero-product { perspective: 1000px; animation: pop-in 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Buttons with a pressed-in 3D edge */
+.btn-3d { box-shadow: 0 5px 0 var(--color-accent-700), 0 14px 24px -8px rgb(214 40 40 / 0.55); transition: transform 0.12s, box-shadow 0.12s, background-color 0.2s; }
+.btn-3d:hover { transform: translateY(-1px); box-shadow: 0 6px 0 var(--color-accent-700), 0 18px 28px -8px rgb(214 40 40 / 0.6); }
+.btn-3d:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--color-accent-700), 0 6px 12px -6px rgb(214 40 40 / 0.5); }
+
+/* Hero carousel */
+.hero-stage { perspective: 1800px; }
+.hero-slide {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  backface-visibility: hidden;
+  transition: transform 0.9s cubic-bezier(0.7, 0, 0.2, 1), opacity 0.9s ease, visibility 0s 0.9s;
+}
+.hero-slide[data-pos="0"] { opacity: 1; pointer-events: auto; visibility: visible; transform: none; transition-delay: 0s; z-index: 1; }
+.hero[data-effect="cube"] .hero-slide[data-pos="-1"] { transform: translateX(-42%) rotateY(62deg) scale(0.86); transform-origin: right center; }
+.hero[data-effect="cube"] .hero-slide[data-pos="1"] { transform: translateX(42%) rotateY(-62deg) scale(0.86); transform-origin: left center; }
+.hero[data-effect="slide"] .hero-slide[data-pos="-1"] { transform: translateX(-100%); }
+.hero[data-effect="slide"] .hero-slide[data-pos="1"] { transform: translateX(100%); }
+.hero[data-effect="zoom"] .hero-slide[data-pos="-1"] { transform: scale(1.18); }
+.hero[data-effect="zoom"] .hero-slide[data-pos="1"] { transform: scale(0.84); }
+@keyframes ken-burns { from { transform: scale(1.12); } to { transform: scale(1); } }
+.hero-slide[data-pos="0"] .hero-bg { animation: ken-burns 8s ease-out both; }
+@keyframes hero-in { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+.hero-slide[data-pos="0"] .hero-in { animation: hero-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes hero-progress { from { width: 0; } to { width: 100%; } }
+.hero-progress { animation: hero-progress linear both; }
+
+/* Sections rise into view while scrolling (browsers without scroll-driven animations just show them) */
+@keyframes rise-in {
+  from { opacity: 0; transform: perspective(1200px) translateY(46px) rotateX(9deg) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@supports (animation-timeline: view()) {
+  [data-reveal="on"] .fx-reveal {
+    animation: rise-in linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 42%;
+    transform-origin: center top;
+  }
+}
+
+/* Cards lift off the page */
+.card-3d { transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s; }
+@media (hover: hover) {
+  .card-3d:hover { transform: translateY(-6px); box-shadow: 0 2px 4px rgb(15 23 42 / 0.05), 0 28px 50px -18px rgb(27 42 123 / 0.38); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .float-3d, .hero-product, .hero-progress, .fx-reveal, .hero-slide .hero-bg, .hero-slide .hero-in { animation: none !important; }
+  .tilt { transform: none !important; }
+}

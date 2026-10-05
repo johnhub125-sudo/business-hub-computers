@@ -62,6 +62,16 @@ export const SETTINGS_DEFAULTS = {
     ogImage: "/brand/og.png",
   },
   analytics: { vercelAnalytics: true, speedInsights: true },
+  /** Storefront look & motion (Admin → Settings → Storefront & effects). */
+  storefront: {
+    carouselEffect: "cube" as "cube" | "slide" | "zoom" | "fade",
+    carouselAutoplay: true,
+    carouselSeconds: 6,
+    heroShowcase: true,
+    cardTilt: true,
+    scrollEffects: true,
+    installPrompt: true,
+  },
   onboarding: { completed: [] as string[] },
 };
 

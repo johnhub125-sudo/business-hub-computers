@@ -49,6 +49,15 @@ const SCHEMAS = {
   security: z.object({ maxFailedLogins: int(3, 20), lockMinutes: int(1, 1440), sessionDays: int(1, 90), requireAdmin2fa: bool, requireEmailVerification: bool }),
   seo: z.object({ defaultTitle: str(120).min(5), defaultDescription: str(300), keywords: str(500), ogImage: str(500) }),
   analytics: z.object({ vercelAnalytics: bool, speedInsights: bool }),
+  storefront: z.object({
+    carouselEffect: z.enum(["cube", "slide", "zoom", "fade"]),
+    carouselAutoplay: bool,
+    carouselSeconds: int(3, 20),
+    heroShowcase: bool,
+    cardTilt: bool,
+    scrollEffects: bool,
+    installPrompt: bool,
+  }),
 } satisfies Partial<Record<SettingKey, z.ZodTypeAny>>;
 
 type EditableKey = keyof typeof SCHEMAS;

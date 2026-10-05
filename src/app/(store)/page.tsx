@@ -21,6 +21,7 @@ import {
   type Section,
 } from "@/components/store/sections";
 import { getActiveSlides, getBranches, getHomepageSections, getSocialLinks } from "@/server/queries/content";
+import { productRail } from "@/server/queries/catalog";
 import { getCurrentUser } from "@/server/session";
 import { wishlistProductIds } from "@/server/services/wishlist";
 import { getSettings } from "@/server/settings";
@@ -31,7 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function HomePage() {
-  const [sections, slides, me, { company }, branches, socials] = await Promise.all([
+  const [sections, slides, me, { company, storefront }, branches, socials] = await Promise.all([
     getHomepageSections(),
     getActiveSlides(),
     getCurrentUser(),
@@ -40,11 +41,14 @@ export default async function HomePage() {
     getSocialLinks(),
   ]);
   const wished = me ? await wishlistProductIds(me.id) : [];
+  // Floating 3D product in the hero: Featured products first, newest as a fallback.
+  const featured = storefront.heroShowcase ? await productRail("featured", undefined, 6).then((r) => (r.length ? r : productRail("new", undefined, 6))) : [];
+  const showcase = featured.map((p) => ({ id: p.id, name: p.name, slug: p.slug, image: p.image, price: p.salePrice ?? p.listPrice, brand: p.brand }));
 
   const render = (s: Section) => {
     switch (s.type) {
       case "hero":
-        return <HeroCarousel slides={slides} />;
+        return <HeroCarousel slides={slides} showcase={showcase} options={{ effect: storefront.carouselEffect, autoplay: storefront.carouselAutoplay, seconds: storefront.carouselSeconds }} />;
       case "trust_bar":
         return <TrustBar />;
       case "categories":
@@ -107,7 +111,9 @@ export default async function HomePage() {
         {company.name} — {company.tagline}
       </h1>
       {sections.map((s) => (
-        <div key={s.id}>{render(s as Section)}</div>
+        <div key={s.id} className={s.type === "hero" || s.type === "trust_bar" ? undefined : "fx-reveal"}>
+          {render(s as Section)}
+        </div>
       ))}
     </div>
   );

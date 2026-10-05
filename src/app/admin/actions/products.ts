@@ -9,6 +9,7 @@ import { db } from "@/server/db";
 import { productImages, products } from "@/server/db/schema";
 import { runAction, UserError } from "@/server/errors";
 import { requirePermission } from "@/server/session";
+import { parseProductSheet } from "@/server/services/product-sheet";
 import { bulkUpdate, importProducts, saveProduct } from "@/server/services/products";
 import { deleteFile, uploadFile } from "@/server/storage";
 
@@ -72,16 +73,22 @@ export async function bulkProductsAction(ids: string[], op: unknown) {
   }, "Bulk update applied");
 }
 
+/** Imports products from the Excel template (.xlsx) or a CSV file. `dryRun` only checks the file. */
 export async function importProductsAction(fd: FormData) {
   return runAction(async () => {
     const staff = await requirePermission("products.create", "products.edit");
     const file = fd.get("file");
-    if (!(file instanceof File) || file.size === 0) throw new UserError("Choose a CSV file.");
-    if (file.size > 5 * 1024 * 1024) throw new UserError("CSV must be under 5MB.");
-    const text = await file.text();
-    const rows = parseCsv(text);
-    const res = await importProducts(rows, staff, fd.get("dryRun") === "1");
-    if (res.ok && fd.get("dryRun") !== "1") revalidatePath("/admin/products");
+    if (!(file instanceof File) || file.size === 0) throw new UserError("Choose the filled-in Excel template (or a CSV file).");
+    if (file.size > 5 * 1024 * 1024) throw new UserError("The file must be under 5MB.");
+    const isExcel = /.xlsx$/i.test(file.name) || file.type.includes("spreadsheetml");
+    if (!isExcel && !/.csv$/i.test(file.name) && !file.type.includes("csv")) throw new UserError("Please upload an Excel (.xlsx) or CSV file. Older .xls files must be saved as .xlsx first.");
+    const rows = isExcel ? await parseProductSheet(await file.arrayBuffer()) : parseCsv(await file.text());
+    const dryRun = fd.get("dryRun") === "1";
+    const res = await importProducts(rows, staff, dryRun);
+    if (res.ok && !dryRun) {
+      revalidatePath("/admin/products");
+      revalidatePath("/", "layout");
+    }
     return res;
   });
 }

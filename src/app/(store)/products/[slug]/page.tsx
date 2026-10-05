@@ -8,6 +8,7 @@ import { breadcrumbLd, JsonLd, siteUrl } from "@/components/json-ld";
 import { ProductRail } from "@/components/store/product-card";
 import { AskQuestion, RecentlyViewed, ReviewForm } from "@/components/store/product-extras";
 import { ProductGallery } from "@/components/store/product-gallery";
+import { productArtUrl } from "@/server/product-art-url";
 import { ProductPurchase } from "@/components/store/product-purchase";
 import { Breadcrumbs, SectionHeading, Stars } from "@/components/ui/misc";
 import { discountPercent } from "@/lib/money";
@@ -37,7 +38,11 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
   const { slug } = await params;
   const data = await getProductBySlug(slug);
   if (!data) notFound();
-  const { product: p, brand, category, condition, subcategory, images, videos, variants } = data;
+  const { product: p, brand, category, condition, subcategory, videos, variants } = data;
+  // No real photo yet → the automatic 3D-styled picture.
+  const images = data.images.length
+    ? data.images
+    : [{ id: "art", url: productArtUrl({ name: p.name, brand: brand?.name, category: category.name, subcategory: subcategory?.name, condition: condition.name, specs: p.specifications }), alt: p.name }];
   const me = await getCurrentUser();
   const [reviews, related, fbt, wished, settings, questions, bought] = await Promise.all([
     productReviews(p.id),
