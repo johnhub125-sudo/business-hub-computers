@@ -1,6 +1,7 @@
 import "server-only";
 import { and, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
+import { BRAND_DEFAULTS } from "@/lib/brand";
 import { nairaToKobo } from "@/lib/money";
 import { slugify } from "@/lib/utils";
 import { audit, diff } from "../audit";
@@ -282,7 +283,8 @@ export function parseSpecifications(text: string): Record<string, string> {
 }
 
 const importRow = z.object({
-  sku: z.string().trim().min(2).max(64).regex(/^[A-Za-z0-9._-]+$/, "letters, numbers, . _ - only"),
+  // Optional: left blank, the SKU is generated (BHC-<category>-<number>).
+  sku: z.string().trim().max(64).regex(/^[A-Za-z0-9._-]*$/, "letters, numbers, . _ - only").optional().default(""),
   name: z.string().trim().min(3).max(200),
   brand: z.string().trim().max(60).optional().default(""),
   category: z.string().trim().min(1, "required"),
@@ -309,6 +311,9 @@ const importRow = z.object({
     .transform((v) => v || "active")
     .pipe(z.enum(["draft", "active", "archived"])),
 });
+
+/** "Power Station" → "POW" */
+const categoryCode = (name: string) => (name.replace(/[^A-Za-z]/g, "").slice(0, 3) || "GEN").toUpperCase();
 
 export type ImportResult = { ok: boolean; errors: { row: number; message: string }[]; notes: string[]; count: number; created: number; updated: number };
 
@@ -359,8 +364,12 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
     }
     if (ok && cat && cond) parsed.push({ ...d, categoryId: cat.id, subcategoryId, conditionId: cond.id, brandKey, specs: parseSpecifications(d.specifications) });
   });
-  const dupes = parsed.map((p) => p.sku.toUpperCase()).filter((s, i, a) => a.indexOf(s) !== i);
+  const dupes = parsed.filter((p) => p.sku).map((p) => p.sku.toUpperCase()).filter((s, i, a) => a.indexOf(s) !== i);
   if (dupes.length) errors.push({ row: 0, message: `The same SKU appears more than once in the file: ${[...new Set(dupes)].join(", ")}` });
+  // Without a SKU, a product is identified by its name and condition.
+  const nameKey = (name: string, conditionId: string) => `${name.trim().toLowerCase()}|${conditionId}`;
+  const sameName = parsed.filter((p) => !p.sku).map((p) => nameKey(p.name, p.conditionId)).filter((s, i, a) => a.indexOf(s) !== i);
+  if (sameName.length) errors.push({ row: 0, message: `The same product (name and condition) appears more than once: ${[...new Set(sameName)].map((k) => k.split("|")[0]).join(", ")}` });
   const notes = newBrands.size ? [`${newBrands.size} new brand(s) will be created: ${[...newBrands.values()].join(", ")}`] : [];
   if (errors.length || dryRun) return { ok: errors.length === 0, errors, notes, count: parsed.length, created: 0, updated: 0 };
 
@@ -372,8 +381,24 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
       const [b] = await tx.insert(brands).values({ name, slug }).onConflictDoUpdate({ target: brands.slug, set: { slug } }).returning({ id: brands.id });
       brandIds.set(slug, b.id);
     }
+    const current = await tx.select({ id: products.id, sku: products.sku, name: products.name, conditionId: products.conditionId, deletedAt: products.deletedAt }).from(products);
+    const bySku = new Map(current.map((c) => [c.sku.toUpperCase(), c]));
+    const byName = new Map(current.filter((c) => !c.deletedAt).map((c) => [nameKey(c.name, c.conditionId), c]));
+    // Next free number for generated SKUs, continuing from the highest one in use.
+    const prefix = BRAND_DEFAULTS.company.shortName.toUpperCase();
+    const generated = new RegExp(`^${prefix}-[A-Z]+-(\\d+)$`);
+    let nextNumber = Math.max(0, ...current.map((c) => Number(generated.exec(c.sku.toUpperCase())?.[1] ?? 0))) + 1;
+    const newSku = (categoryId: string) => {
+      const top = cats.find((c) => c.id === categoryId);
+      for (;;) {
+        const sku = `${prefix}-${categoryCode(top?.name ?? "")}-${String(nextNumber++).padStart(4, "0")}`;
+        if (!bySku.has(sku)) return sku;
+      }
+    };
     for (const p of parsed) {
-      const [existing] = await tx.select({ id: products.id }).from(products).where(eq(products.sku, p.sku));
+      const existing = p.sku ? bySku.get(p.sku.toUpperCase()) : byName.get(nameKey(p.name, p.conditionId));
+      const sku = existing?.sku ?? (p.sku || newSku(p.categoryId));
+      bySku.set(sku.toUpperCase(), existing ?? { id: "", sku, name: p.name, conditionId: p.conditionId, deletedAt: null });
       const flags = { isFeatured: p.featured, isDeal: p.deal, isNewArrival: p.new_arrival, isBestSeller: p.best_seller };
       const base = {
         name: p.name,
@@ -408,12 +433,12 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
             isDeal: p.deal ?? false,
             isNewArrival: p.new_arrival ?? false,
             isBestSeller: p.best_seller ?? false,
-            sku: p.sku,
+            sku,
             slug: await uniqueProductSlug(tx, p.name, null),
             createdBy: staff.id,
           })
           .returning({ id: products.id });
-        const [v] = await tx.insert(productVariants).values({ productId: np.id, sku: `${p.sku}-STD`, isDefault: true }).returning({ id: productVariants.id });
+        const [v] = await tx.insert(productVariants).values({ productId: np.id, sku: `${sku}-STD`, isDefault: true }).returning({ id: productVariants.id });
         await tx.insert(inventory).values({ variantId: v.id });
         if (p.stock > 0) await adjustStock(tx, { variantId: v.id, delta: p.stock, type: "purchase", referenceType: "import", referenceId: np.id, userId: staff.id, note: "Import opening stock" });
         created++;

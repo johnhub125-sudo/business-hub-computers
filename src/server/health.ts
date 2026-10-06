@@ -8,6 +8,8 @@ import { outboxMessages, webhookEvents } from "./db/schema";
 import { emailDelivery } from "./email";
 import { appEnv, integrations } from "./env";
 import { paystackConfig, testConnection } from "./integrations/paystack";
+import { photoSearchReady, photosWaiting } from "./services/product-photos";
+import { getSetting } from "./settings";
 
 export type HealthStatus = "Connected" | "Not Configured" | "Error" | "Disabled";
 export type HealthCheck = { key: string; name: string; status: HealthStatus; detail: string; setup?: string };
@@ -112,6 +114,13 @@ export async function runHealthChecks(): Promise<HealthCheck[]> {
   checks.push({ key: "maps", name: "Google Maps", status: integrations.maps() ? "Connected" : "Not Configured", detail: integrations.maps() ? "Embed API key present (browser key, referrer-restricted)" : "Using keyless map embed fallback", setup: "docs/setup/google-maps.md" });
   checks.push({ key: "whatsapp", name: "WhatsApp Cloud API", status: integrations.whatsapp() ? "Connected" : "Not Configured", detail: integrations.whatsapp() ? "Automated messages enabled" : "Click-to-chat links only (no automated messages)", setup: "docs/setup/whatsapp.md" });
   checks.push({ key: "ratelimit", name: "Rate limiting store", status: "Connected", detail: integrations.redis() ? "Upstash Redis" : "PostgreSQL fallback" });
+  {
+    const { autoPhotos } = await getSetting("storefront");
+    if (!autoPhotos) checks.push({ key: "photos", name: "Product photo search", status: "Disabled", detail: "Switched off in Settings → Storefront & effects. Products show their 3D picture." });
+    else if (!integrations.imageSearch()) checks.push({ key: "photos", name: "Product photo search", status: "Not Configured", detail: "Set BRAVE_SEARCH_API_KEY to find real product photos. Products show their 3D picture meanwhile.", setup: "docs/setup/product-photos.md" });
+    else if (!photoSearchReady()) checks.push({ key: "photos", name: "Product photo search", status: "Error", detail: "The search key is set, but file storage is not connected, so found photos cannot be saved.", setup: "docs/setup/cloudflare-r2.md" });
+    else checks.push({ key: "photos", name: "Product photo search", status: "Connected", detail: `Brave Search · ${await photosWaiting()} product(s) waiting for a photo` });
+  }
   checks.push({ key: "cron", name: "Scheduled jobs", status: integrations.cron() ? "Connected" : "Not Configured", detail: integrations.cron() ? "CRON_SECRET set · daily Vercel cron" : "Set CRON_SECRET", setup: "docs/setup/vercel.md#cron" });
   checks.push({ key: "analytics", name: "Analytics & Speed Insights", status: process.env.VERCEL ? "Connected" : "Not Configured", detail: process.env.VERCEL ? "Vercel Web Analytics & Speed Insights" : "Active once deployed on Vercel" });
 

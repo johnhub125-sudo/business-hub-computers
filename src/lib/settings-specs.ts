@@ -109,6 +109,8 @@ export const SETTINGS_SPECS: Record<string, { title: string; description?: strin
       { name: "cardTilt", label: "Product cards tilt in 3D under the pointer", type: "boolean" },
       { name: "scrollEffects", label: "Sections rise into view while scrolling", type: "boolean" },
       { name: "installPrompt", label: "Invite visitors to install the shop as an app", type: "boolean", hint: "A small banner; one tap on Android/Chrome/Edge, short instructions on iPhone" },
+      { name: "autoPhotos", label: "Find real product photos automatically", type: "boolean", hint: "Runs in the background after imports. Products show their 3D picture until a photo is found." },
+      { name: "photosVendorOnly", label: "Only use photos from the manufacturer’s own website", type: "boolean", hint: "Off: if the manufacturer has none, a matching photo from another shop’s page may be used." },
     ],
   },
   analytics: { title: "Analytics", fields: [{ name: "vercelAnalytics", label: "Vercel Web Analytics", type: "boolean" }, { name: "speedInsights", label: "Vercel Speed Insights", type: "boolean" }] },

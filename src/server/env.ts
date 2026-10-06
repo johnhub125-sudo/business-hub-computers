@@ -33,6 +33,8 @@ export const integrations = {
   whatsapp: () => Boolean(process.env.WHATSAPP_API_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
   redis: () => Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN),
   cron: () => Boolean(process.env.CRON_SECRET),
+  /** Brave Search image API: finds real product photos in the background. */
+  imageSearch: () => Boolean(process.env.BRAVE_SEARCH_API_KEY),
   sentry: () => Boolean(process.env.SENTRY_DSN),
 };
 

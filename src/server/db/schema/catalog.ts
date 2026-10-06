@@ -124,6 +124,9 @@ export const products = pgTable(
     ratingCount: integer().notNull().default(0),
     soldCount: integer().notNull().default(0),
     viewCount: integer().notNull().default(0),
+    /** Real-photo search: pending → found | not_found; "off" = staff chose to keep the automatic picture. */
+    photoSearch: text().notNull().default("pending"),
+    photoCheckedAt: ts(),
     createdBy: text().references(() => user.id, { onDelete: "set null" }),
     createdAt: ts().notNull().defaultNow(),
     updatedAt: ts().notNull().defaultNow(),
@@ -182,6 +185,9 @@ export const productImages = pgTable(
     url: text().notNull(),
     pathname: text(),
     alt: text(),
+    /** "upload" = added by staff; "auto" = found by the photo search (sourceUrl = the page it came from). */
+    source: text().notNull().default("upload"),
+    sourceUrl: text(),
     sortOrder: integer().notNull().default(0),
     createdAt: ts().notNull().defaultNow(),
   },

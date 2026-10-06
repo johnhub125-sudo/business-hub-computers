@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 type Opt = { id: string; name: string; parentId?: string | null };
 type Variant = { id?: string | null; name: string; sku: string; barcode: string; price: string; discountPrice: string; attributes: [string, string][]; image: string; isDefault: boolean; isActive: boolean; openingStock: string; onHand?: number };
-type Img = { id: string; url: string; alt: string | null };
+type Img = { id: string; url: string; alt: string | null; source?: string; sourceUrl?: string | null };
 
 export type ProductForm = {
   id?: string | null;
@@ -389,6 +389,17 @@ export function ProductEditor({
                         <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-brand-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
                           <Star className="size-3" aria-hidden /> Main
                         </span>
+                      )}
+                      {img.source === "auto" && (
+                        <a
+                          href={img.sourceUrl ?? undefined}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Found automatically. Open the page it came from to check it is the right product."
+                          className="absolute bottom-1.5 left-1.5 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-amber-600"
+                        >
+                          Auto-found ↗
+                        </a>
                       )}
                     </div>
                     <Input value={img.alt ?? ""} onChange={(e) => setF((x) => ({ ...x, images: x.images.map((m) => (m.id === img.id ? { ...m, alt: e.target.value } : m)) }))} placeholder="Alt text" aria-label={`Alt text for image ${i + 1}`} className="mt-2 h-8 text-xs" />

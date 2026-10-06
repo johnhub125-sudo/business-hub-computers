@@ -6,7 +6,9 @@ import { AdminHeader, FilterBar, FilterInput, FilterSelect, one, pageOf, qsWith,
 import { ButtonLink } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/misc";
 import { db } from "@/server/db";
+import { PhotoFinder } from "@/components/admin/product-photos";
 import { productImage } from "@/server/product-art-url";
+import { photoSearchReady, photosWaiting } from "@/server/services/product-photos";
 import { photoExpr } from "@/server/queries/catalog";
 import { brands, categories, productConditions, products } from "@/server/db/schema";
 import { can, requireStaffPage } from "@/server/session";
@@ -68,6 +70,9 @@ export default async function AdminProductsPage({ searchParams }: PageProps<"/ad
     db.select({ id: productConditions.id, name: productConditions.name }).from(productConditions).orderBy(asc(productConditions.sortOrder)),
   ]);
 
+  const photosReady = photoSearchReady();
+  const waitingPhotos = photosReady ? await photosWaiting() : 0;
+
   return (
     <div>
       <AdminHeader
@@ -95,6 +100,7 @@ export default async function AdminProductsPage({ searchParams }: PageProps<"/ad
         <FilterSelect name="condition" label="Condition" defaultValue={cond} options={conds.map((c) => [c.id, c.name])} />
         <FilterSelect name="stock" label="Stock" defaultValue={stock} options={[["low", "Low stock"], ["out", "Out of stock"]]} />
       </FilterBar>
+      {photosReady && waitingPhotos > 0 && can(staff, "products.edit") && <PhotoFinder waiting={waitingPhotos} ready className="mb-4" />}
       <ProductsTable rows={rows.map(({ specs, ...r }) => ({ ...r, image: productImage(r.image, { name: r.name, brand: r.brand, category: r.category, condition: r.condition, specs }, true) }))} categories={cats} canEdit={can(staff, "products.edit")} canDelete={can(staff, "products.delete")} canImport={can(staff, "products.create")} />
       <Pagination page={page} pages={Math.ceil(total / PER)} hrefFor={(p) => qsWith("/admin/products", sp, { page: p > 1 ? String(p) : undefined })} />
     </div>

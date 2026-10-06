@@ -7,8 +7,9 @@ import { toast } from "sonner";
 import { importProductsAction } from "@/app/admin/actions/products";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { PhotoFinder } from "./product-photos";
 
-type Result = { ok: boolean; errors: { row: number; message: string }[]; notes: string[]; count: number; created: number; updated: number };
+type Result = { ok: boolean; errors: { row: number; message: string }[]; notes: string[]; count: number; created: number; updated: number; photos: { ready: boolean; waiting: number } | null };
 
 /**
  * Add many products at once: download the Excel template, fill it, check it, import it.
@@ -53,7 +54,7 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
           <div>
             <h2 className="font-bold">Add many products with Excel</h2>
             <p className="mt-0.5 max-w-2xl text-sm text-muted">
-              Download the template, fill one row per product, then upload it here. Products go straight to the right category, Brand New / UK Used menu and sections, and each one gets a 3D picture automatically.
+              Download the template, fill one row per product, then upload it here. Product codes (SKU) and web addresses are created for you. Products go straight to the right category, Brand New / UK Used menu and sections, each with a 3D picture — then real photos are looked up in the background.
             </p>
           </div>
         </div>
@@ -101,9 +102,11 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
               Import {checked && result ? `${result.count} product${result.count === 1 ? "" : "s"}` : ""}
             </Button>
           </form>
-          <p className="mt-2 text-xs text-muted">Nothing is saved until every row passes the check. A row whose SKU already exists updates that product.</p>
+          <p className="mt-2 text-xs text-muted">Nothing is saved until every row passes the check. A row with the same name and condition as an existing product updates it.</p>
         </li>
       </ol>
+
+      {done && result?.photos && (result.photos.waiting > 0 || !result.photos.ready) && <PhotoFinder key={result.created + result.updated} waiting={result.photos.waiting} ready={result.photos.ready} autoStart className="mt-4" />}
 
       {result && (
         <div className={cn("mt-4 rounded-xl p-3 text-sm", result.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700")} role="status">

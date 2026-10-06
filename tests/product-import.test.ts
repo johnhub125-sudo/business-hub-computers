@@ -32,10 +32,19 @@ async function fillTemplate(rows: Record<string, string | number>[]) {
   await wb.xlsx.load((await buildProductTemplate()).buffer as ArrayBuffer);
   const ws = wb.getWorksheet("Products")!;
   rows.forEach((r, i) => {
-    for (const [key, value] of Object.entries(r)) ws.getCell(i + 2, SHEET_COLUMNS.findIndex((c) => c.key === key) + 1).value = value;
+    for (const [key, value] of Object.entries(r)) {
+      const col = SHEET_COLUMNS.findIndex((c) => c.key === key);
+      if (col < 0) throw new Error(`The template has no “${key}” column`);
+      ws.getCell(i + 2, col + 1).value = value;
+    }
   });
   return parseProductSheet((await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }
+
+const stockOf = async (productId: string) => {
+  const [s] = await db.select({ onHand: inventory.onHand }).from(inventory).innerJoin(productVariants, eq(productVariants.id, inventory.variantId)).where(eq(productVariants.productId, productId));
+  return s.onHand;
+};
 
 describe("Excel product import", () => {
   beforeEach(async () => {
@@ -44,66 +53,92 @@ describe("Excel product import", () => {
     await seedCatalogue();
   });
 
-  it("offers the live categories, brands and conditions as dropdowns", async () => {
+  it("offers the live categories, brands and conditions as dropdowns, and asks for no SKU", async () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load((await buildProductTemplate()).buffer as ArrayBuffer);
     expect(wb.worksheets.map((w) => w.name)).toEqual(["Products", "Lists", "How to use"]);
     const lists = wb.getWorksheet("Lists")!;
     expect(lists.getColumn(1).values).toContain("Computers");
     expect(lists.getColumn(2).values).toContain("Business Laptops");
-    expect(wb.getWorksheet("Products")!.getCell("C2").dataValidation?.type).toBe("list");
+    const ws = wb.getWorksheet("Products")!;
+    expect(ws.getCell("A1").text).toBe("Product name *");
+    expect(ws.getRow(1).values).not.toContain("SKU *");
+    expect(ws.getCell("B2").dataValidation?.type).toBe("list"); // Category
   });
 
-  it("puts every product in the right place, with stock, specs and a picture", async () => {
+  it("creates the SKU and web address, and puts every product in the right place", async () => {
+    await db.insert(products).values({ sku: "BHC-POW-0033", name: "Existing power station", slug: "existing", categoryId: (await db.select().from(categories).where(eq(categories.slug, "printers")))[0].id, conditionId: (await db.select().from(productConditions))[0].id, price: 100 });
     const rows = await fillTemplate([
-      { sku: "HP-840-G8", name: "HP EliteBook 840 G8 Core i7", category: "Computers", subcategory: "Business Laptops", brand: "HP", condition: "UK Used", price: 520000, discount_price: 495000, stock: 4, specifications: "Processor: Core i7 11th Gen; RAM: 16GB; Storage: 512GB SSD", featured: "Yes", deal: "Yes" },
-      { sku: "EPS-L3250", name: "Epson EcoTank L3250 Printer", category: "Printers", brand: "Epson", condition: "Brand New", price: 285000, stock: 2, status: "Draft" },
+      { name: "HP EliteBook 840 G8 Core i7", category: "Computers", subcategory: "Business Laptops", brand: "HP", condition: "UK Used", price: 520000, discount_price: 495000, stock: 4, specifications: "Processor: Core i7 11th Gen; RAM: 16GB; Storage: 512GB SSD", featured: "Yes", deal: "Yes" },
+      { name: "Epson EcoTank L3250 Printer", category: "Printers", brand: "Epson", condition: "Brand New", price: 285000, stock: 2, status: "Draft" },
     ]);
 
     const check = await importProducts(rows, staff, true);
     expect(check).toMatchObject({ ok: true, count: 2, created: 0 });
     expect(check.notes[0]).toContain("Epson");
-    expect(await db.select().from(products)).toHaveLength(0); // checking never saves
+    expect(await db.select().from(products)).toHaveLength(1); // checking never saves
 
     const res = await importProducts(rows, staff, false);
     expect(res).toMatchObject({ ok: true, created: 2, updated: 0 });
 
-    const [laptop] = await db.select().from(products).where(eq(products.sku, "HP-840-G8"));
+    const [laptop] = await db.select().from(products).where(eq(products.name, "HP EliteBook 840 G8 Core i7"));
+    const [printer] = await db.select().from(products).where(eq(products.name, "Epson EcoTank L3250 Printer"));
+    // Generated codes continue from the highest number already in use.
+    expect(laptop.sku).toBe("BHC-COM-0034");
+    expect(printer.sku).toBe("BHC-PRI-0035");
+    expect(laptop.slug).toBe("hp-elitebook-840-g8-core-i7");
+    expect(laptop.photoSearch).toBe("pending");
+
     const [sub] = await db.select().from(categories).where(eq(categories.slug, "business-laptops"));
     const [used] = await db.select().from(productConditions).where(eq(productConditions.slug, "uk-used"));
     expect(laptop).toMatchObject({ price: 52_000_000, discountPrice: 49_500_000, subcategoryId: sub.id, conditionId: used.id, status: "active", isFeatured: true, isDeal: true, isNewArrival: false });
     expect(laptop.specifications).toEqual({ Processor: "Core i7 11th Gen", RAM: "16GB", Storage: "512GB SSD" });
-    const [stock] = await db.select({ onHand: inventory.onHand }).from(inventory).innerJoin(productVariants, eq(productVariants.id, inventory.variantId)).where(eq(productVariants.productId, laptop.id));
-    expect(stock.onHand).toBe(4);
+    expect(await stockOf(laptop.id)).toBe(4);
     expect(await db.select().from(brands).where(eq(brands.slug, "epson"))).toHaveLength(1); // new brand created
 
     // Storefront: only the Active product is listed, under UK Used and Deals, with an automatic picture.
-    const shop = await listProducts({});
+    const shop = await listProducts({ condition: ["uk-used"] });
     expect(shop.items.map((p) => p.name)).toEqual(["HP EliteBook 840 G8 Core i7"]);
     expect((await listProducts({ condition: ["uk-used"], flag: "deal" })).total).toBe(1);
     expect(shop.items[0].image).toMatch(/^\/product-art\/.+\.svg$/);
   });
 
-  it("updates an existing SKU without wiping blank cells or re-adding stock", async () => {
-    await importProducts(await fillTemplate([{ sku: "HP-840-G8", name: "HP EliteBook 840 G8", category: "Computers", condition: "UK Used", price: 520000, stock: 4, specifications: "RAM: 16GB", featured: "Yes" }]), staff, false);
-    const res = await importProducts(await fillTemplate([{ sku: "HP-840-G8", name: "HP EliteBook 840 G8", category: "Computers", condition: "UK Used", price: 499000, stock: 9 }]), staff, false);
-    expect(res).toMatchObject({ created: 0, updated: 1 });
-    const [p] = await db.select().from(products).where(eq(products.sku, "HP-840-G8"));
-    expect(p).toMatchObject({ price: 49_900_000, isFeatured: true, specifications: { RAM: "16GB" } });
-    const [stock] = await db.select({ onHand: inventory.onHand }).from(inventory).innerJoin(productVariants, eq(productVariants.id, inventory.variantId)).where(eq(productVariants.productId, p.id));
-    expect(stock.onHand).toBe(4);
+  it("updates a product with the same name and condition, without wiping blank cells or re-adding stock", async () => {
+    await importProducts(await fillTemplate([{ name: "HP EliteBook 840 G8", category: "Computers", condition: "UK Used", price: 520000, stock: 4, specifications: "RAM: 16GB", featured: "Yes" }]), staff, false);
+    const res = await importProducts(
+      await fillTemplate([
+        { name: "hp elitebook 840 g8", category: "Computers", condition: "UK Used", price: 499000, stock: 9 },
+        { name: "HP EliteBook 840 G8", category: "Computers", condition: "Brand New", price: 900000, stock: 1 }, // same name, other condition = another product
+      ]),
+      staff,
+      false,
+    );
+    expect(res).toMatchObject({ created: 1, updated: 1 });
+    const all = await db.select().from(products).orderBy(products.sku);
+    expect(all.map((p) => p.sku)).toEqual(["BHC-COM-0001", "BHC-COM-0002"]);
+    expect(all[0]).toMatchObject({ price: 49_900_000, isFeatured: true, specifications: { RAM: "16GB" } });
+    expect(await stockOf(all[0].id)).toBe(4);
+  });
+
+  it("still accepts a file that brings its own SKUs", async () => {
+    const res = await importProducts([{ sku: "MY-CODE-1", name: "Canon PIXMA G3420", category: "Printers", condition: "Brand New", price: "165000" }], staff, false);
+    expect(res.created).toBe(1);
+    expect((await db.select().from(products))[0].sku).toBe("MY-CODE-1");
   });
 
   it("reports every problem with its Excel row number and saves nothing", async () => {
     const rows = await fillTemplate([
-      { sku: "OK-1", name: "HP ProBook 440", category: "Computers", condition: "Brand New", price: 400000 },
-      { sku: "BAD 2", name: "X", category: "Phones", condition: "Brand New", price: 0 },
-      { sku: "BAD-3", name: "Canon Printer", category: "Printers", subcategory: "Business Laptops", condition: "Brand New", price: 100000, discount_price: 150000, featured: "maybe" },
+      { name: "HP ProBook 440", category: "Computers", condition: "Brand New", price: 400000 },
+      { name: "X", category: "Phones", condition: "Brand New", price: 0 },
+      { name: "Canon Printer", category: "Printers", subcategory: "Business Laptops", condition: "Brand New", price: 100000, discount_price: 150000, featured: "maybe" },
+      { name: "hp probook 440", category: "Computers", condition: "Brand New", price: 410000 },
     ]);
     const res = await importProducts(rows, staff, false);
     expect(res.ok).toBe(false);
     expect(res.errors.map((e) => e.row)).toEqual(expect.arrayContaining([3, 4]));
     expect(res.errors.some((e) => e.row === 2)).toBe(false);
+    expect(res.errors.some((e) => /Unknown category “Phones”/.test(e.message))).toBe(true);
+    expect(res.errors.some((e) => /appears more than once/.test(e.message))).toBe(true);
     expect(await db.select().from(products)).toHaveLength(0);
   });
 });

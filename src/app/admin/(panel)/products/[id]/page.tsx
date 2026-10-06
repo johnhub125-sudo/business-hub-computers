@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductEditor } from "@/components/admin/product-editor";
+import { ProductPictureTools } from "@/components/admin/product-photos";
+import { photoSearchReady } from "@/server/services/product-photos";
 import { AdminHeader } from "@/components/admin/ui";
 import { ButtonLink } from "@/components/ui/button";
 import { requireStaffPage } from "@/server/session";
-import { editorOptions, productForm } from "../editor-data";
+import { editorOptions, productForm, productPicture } from "../editor-data";
 
 export const metadata: Metadata = { title: "Edit product" };
 
@@ -14,11 +16,12 @@ export default async function EditProductPage({ params, searchParams }: PageProp
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const [form, opts, sp] = await Promise.all([productForm(id), editorOptions(), searchParams]);
   if (!form) notFound();
+  const picture = await productPicture(id);
   return (
     <div>
       <AdminHeader
         title={form.name}
-        description={sp.created ? "Product created. Now upload images and review the details." : `SKU ${form.sku}`}
+        description={sp.created ? "Product created with its picture. Review the details below." : `SKU ${form.sku}`}
         back={{ href: "/admin/products", label: "Products" }}
         actions={
           <>
@@ -31,6 +34,7 @@ export default async function EditProductPage({ params, searchParams }: PageProp
           </>
         }
       />
+      <ProductPictureTools productId={form.id!} picture={picture.url} kind={picture.kind} searchReady={photoSearchReady()} status={picture.status} />
       <ProductEditor key={form.id} initial={form} {...opts} />
     </div>
   );

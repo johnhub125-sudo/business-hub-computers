@@ -71,6 +71,9 @@ export const SETTINGS_DEFAULTS = {
     cardTilt: true,
     scrollEffects: true,
     installPrompt: true,
+    /** Look for real product photos in the background (needs BRAVE_SEARCH_API_KEY). */
+    autoPhotos: true,
+    photosVendorOnly: false,
   },
   onboarding: { completed: [] as string[] },
 };

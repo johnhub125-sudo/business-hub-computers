@@ -57,6 +57,8 @@ const SCHEMAS = {
     cardTilt: bool,
     scrollEffects: bool,
     installPrompt: bool,
+    autoPhotos: bool,
+    photosVendorOnly: bool,
   }),
 } satisfies Partial<Record<SettingKey, z.ZodTypeAny>>;
 

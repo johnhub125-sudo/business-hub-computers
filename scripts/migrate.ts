@@ -3,6 +3,9 @@
  * migrations are skipped). Never generates or drops anything by itself.
  *
  *   npm run db:migrate
+ *
+ * Vercel runs this before every build (`vercel-build` in package.json), so schema updates ship with
+ * the code that needs them.
  */
 import { config } from "dotenv";
 config({ path: [".env.local", ".env"], quiet: true });
@@ -13,6 +16,11 @@ import { Pool } from "pg";
 
 async function main() {
   const url = process.env.DATABASE_URL;
+  if (!url && process.argv.includes("--if-configured")) {
+    // Deploy builds: a project without a database yet still builds; the app reports it at runtime.
+    console.warn("• DATABASE_URL is not set — skipping migrations");
+    return;
+  }
   if (!url) throw new Error("DATABASE_URL is not set");
   const isLocal = /localhost|127\.0\.0\.1/.test(url);
   const pool = new Pool({ connectionString: url, max: 1, ssl: isLocal ? undefined : { rejectUnauthorized: true } });

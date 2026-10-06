@@ -15,8 +15,7 @@
 
 | Column | Notes |
 |---|---|
-| SKU `*` | Your unique code. A SKU that already exists **updates** that product. |
-| Product name `*`, Price (₦) `*` | Price in naira, numbers only. |
+| Product name `*`, Price (₦) `*` | Price in naira, numbers only. A row with the same name **and** condition as an existing product **updates** it. |
 | Category `*`, Subcategory | Decide the shop menu. The subcategory must belong to the category. |
 | Condition `*` | Brand New / UK Used… puts the product under that menu. |
 | Brand | Pick one or type a new one; new brands are created automatically. |
@@ -26,10 +25,26 @@
 | Featured, Deal, New arrival, Best seller | `Yes` / `No`. Add the product to those sections. Featured products also appear as the floating 3D product in the home carousel. |
 | Status | `Active` (default, visible immediately) or `Draft`. |
 
-When updating an existing SKU, blank Yes/No and Specifications cells are left as they were.
-CSV files with the same column names (`sku, name, category, …`) are accepted too. Limit: 2,000 rows.
+**Product codes and web addresses are automatic.** There is no SKU column: each new product gets
+the next code in the series `BHC-<category>-<number>` (for example `BHC-COM-0034`) and a web address
+made from its name. Both can be changed later on the product's edit page.
 
-## Automatic product pictures
+When updating an existing product, blank Yes/No and Specifications cells are left as they were.
+CSV files with the same column names (`name, category, …`) are accepted too, and a `sku` column is
+honoured if a file has one. Limit: 2,000 rows.
+
+## Product pictures
+
+Two steps, both automatic:
+
+1. **Straight away:** a generated 3D picture (below).
+2. **In the background:** a real photo from the manufacturer's website, once photo search is set up
+   — see [setup/product-photos.md](setup/product-photos.md).
+
+Staff with the Edit products permission can replace, remove or re-search any picture on the
+product's edit page.
+
+### The generated 3D picture
 
 Every product without an uploaded photo shows a generated 3D-style picture of its device type
 (laptop, gaming laptop, desktop, monitor, printer, projector, power station, UPS, keyboard, mouse,

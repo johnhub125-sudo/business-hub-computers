@@ -3,7 +3,9 @@ import { asc, eq } from "drizzle-orm";
 import type { ProductForm } from "@/components/admin/product-editor";
 import { koboToNairaString } from "@/lib/money";
 import { db } from "@/server/db";
+import { isPlaceholderImage } from "@/lib/product-kind";
 import { brands, categories, inventory, productConditions, productImages, productVariants, productVideos, products, suppliers } from "@/server/db/schema";
+import { productArtUrl } from "@/server/product-art-url";
 
 const n = (k: number | null | undefined) => (k == null ? "" : koboToNairaString(k).replace(/\.00$/, ""));
 
@@ -108,6 +110,21 @@ export async function productForm(id: string): Promise<ProductForm | null> {
       onHand: onHand ?? 0,
     })),
     videos: videos.map((v) => ({ url: v.url, title: v.title ?? "" })),
-    images: images.map((i) => ({ id: i.id, url: i.url, alt: i.alt })),
+    images: images.map((i) => ({ id: i.id, url: i.url, alt: i.alt, source: i.source, sourceUrl: i.sourceUrl })),
   };
+}
+
+/** The picture customers currently see for a product, and where it came from. */
+export async function productPicture(id: string): Promise<{ url: string; kind: "photo" | "auto" | "generated"; status: string }> {
+  const [p] = await db
+    .select({ name: products.name, specs: products.specifications, status: products.photoSearch, brand: brands.name, category: categories.name, condition: productConditions.name })
+    .from(products)
+    .innerJoin(categories, eq(categories.id, products.categoryId))
+    .innerJoin(productConditions, eq(productConditions.id, products.conditionId))
+    .leftJoin(brands, eq(brands.id, products.brandId))
+    .where(eq(products.id, id));
+  const imgs = await db.select().from(productImages).where(eq(productImages.productId, id)).orderBy(asc(productImages.sortOrder));
+  const main = imgs.find((i) => !isPlaceholderImage(i.url));
+  if (main) return { url: main.url, kind: main.source === "auto" ? "auto" : "photo", status: p?.status ?? "pending" };
+  return { url: productArtUrl({ name: p?.name ?? "", brand: p?.brand, category: p?.category, condition: p?.condition, specs: p?.specs }), kind: "generated", status: p?.status ?? "pending" };
 }

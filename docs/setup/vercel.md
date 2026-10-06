@@ -34,3 +34,8 @@ QStash schedules (e.g. every 5 minutes) that POST to `/api/cron/reconcile` and `
 
 ## Domain
 Vercel → Settings → **Domains** → add `businesshubcomputers.com` and `www…` and follow the DNS instructions.
+
+## Database updates on deploy {#migrations}
+Every Vercel build first runs `npm run vercel-build`, which applies any new files in `drizzle/` to the
+database in `DATABASE_URL` and then builds the site. Updates are additive and safe to re-run. If an
+update fails, the build stops and the previous deployment stays live.

@@ -6,6 +6,7 @@ import { enqueueEmail, processOutbox } from "./email";
 import { appUrl } from "./env";
 import { log } from "./logger";
 import { releaseExpired } from "./services/inventory";
+import { findPhotosBatch } from "./services/product-photos";
 import { notify, notifyStaff } from "./services/notifications";
 import { expireStaleOrders, finalizePaystackPayment, reconcilePendingPaystack } from "./services/payments";
 
@@ -74,6 +75,11 @@ export const JOBS = {
       for (const t of soon) if (t.assignedTo) await notify(tx, t.assignedTo, { type: "task_deadline", title: `Task due within 24h: ${t.title}`, link: `/admin/tasks/${t.id}`, dedupeKey: `task-due:${t.id}` });
     });
     return { overdue: overdue.length, dueSoon: soon.length };
+  },
+  /** Real product photos for products still showing the 3D picture (see services/product-photos.ts). */
+  async productPhotos() {
+    const r = await findPhotosBatch(6);
+    return { checked: r.processed, found: r.found, remaining: r.remaining, note: r.message };
   },
   async abandonedCarts() {
     // Signed-in customers whose cart was untouched for 24–48h get one gentle reminder (in-app).

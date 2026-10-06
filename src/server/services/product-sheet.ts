@@ -12,8 +12,7 @@ import { UserError } from "../errors";
 type Column = { key: string; header: string; width: number; required?: boolean; help: string; list?: "category" | "subcategory" | "brand" | "condition" | "yesno" | "status" };
 
 export const SHEET_COLUMNS: Column[] = [
-  { key: "sku", header: "SKU", width: 18, required: true, help: "Your unique product code. Letters, numbers, dot, dash or underscore (e.g. HP-840-G8). An existing SKU updates that product." },
-  { key: "name", header: "Product name", width: 44, required: true, help: "The full name customers will see." },
+  { key: "name", header: "Product name", width: 44, required: true, help: "The full name customers will see. The product code (SKU) and web address are created for you. A row with the same name and condition as an existing product updates it." },
   { key: "category", header: "Category", width: 20, required: true, list: "category", help: "Pick from the list. Decides where the product appears in the shop menu." },
   { key: "subcategory", header: "Subcategory", width: 22, list: "subcategory", help: "Optional. Must belong to the chosen category." },
   { key: "brand", header: "Brand", width: 16, list: "brand", help: "Pick from the list or type a new brand — new brands are created for you." },
@@ -44,6 +43,7 @@ for (const c of SHEET_COLUMNS) {
   HEADER_KEYS.set(norm(c.header), c.key);
   HEADER_KEYS.set(norm(c.key), c.key);
 }
+HEADER_KEYS.set("sku", "sku"); // optional: accepted when present, generated when absent
 HEADER_KEYS.set("costprice", "purchase_price");
 HEADER_KEYS.set("stock", "stock");
 HEADER_KEYS.set("quantity", "stock");
@@ -76,7 +76,7 @@ export async function buildProductTemplate(): Promise<Buffer> {
   wb.created = new Date();
 
   // ── Products (the sheet staff fill in) ──
-  const ws = wb.addWorksheet("Products", { views: [{ state: "frozen", ySplit: 1, xSplit: 2 }] });
+  const ws = wb.addWorksheet("Products", { views: [{ state: "frozen", ySplit: 1, xSplit: 1 }] });
   ws.columns = SHEET_COLUMNS.map((c) => ({ header: c.required ? `${c.header} *` : c.header, key: c.key, width: c.width }));
   const head = ws.getRow(1);
   head.height = 30;
@@ -132,14 +132,15 @@ export async function buildProductTemplate(): Promise<Buffer> {
     ["4.", "If the check passes, press Import. Nothing is saved unless every row is valid, so a mistake never leaves you with half an import."],
     ["", ""],
     ["Where products appear", "Category and Subcategory decide the shop menu. Condition puts the product under Brand New or UK Used. Featured, Deal, New arrival and Best seller add it to those sections. Status “Active” shows it immediately."],
-    ["Pictures", "Every product gets an automatic 3D picture showing its type, brand, name and first three specifications. Upload real photos later from the product’s edit page — they replace the automatic picture."],
-    ["Updating products", "A row whose SKU already exists updates that product’s details and price. Stock is only set for new products; change stock for existing ones under Inventory."],
+    ["Pictures", "Every product gets an automatic 3D picture straight away. The site then looks for a real photo on the manufacturer’s website in the background and swaps it in. You can replace or remove any picture on the product’s edit page."],
+    ["Product codes", "You do not enter a SKU or web address — both are created automatically for every new product."],
+    ["Updating products", "A row with the same product name and condition as an existing product updates its details and price. Stock is only set for new products; change stock for existing ones under Inventory."],
     ["Limit", `Up to ${MAX_ROWS.toLocaleString()} products per file.`],
     ["", ""],
     ["Column guide", ""],
     ...SHEET_COLUMNS.map((c): [string, string] => [c.required ? `${c.header} *` : c.header, c.help]),
     ["", ""],
-    ["Example row", "SKU: HP-840-G8 · Product name: HP EliteBook 840 G8 Core i7 · Category: Computers · Subcategory: Business Laptops · Brand: HP · Condition: UK Used · Price: 520000 · Stock quantity: 4 · Specifications: Processor: Core i7 11th Gen; RAM: 16GB; Storage: 512GB SSD · Featured: Yes"],
+    ["Example row", "Product name: HP EliteBook 840 G8 Core i7 · Category: Computers · Subcategory: Business Laptops · Brand: HP · Condition: UK Used · Price: 520000 · Stock quantity: 4 · Specifications: Processor: Core i7 11th Gen; RAM: 16GB; Storage: 512GB SSD · Featured: Yes"],
   ];
   lines.forEach(([a, b], i) => {
     const row = hs.getRow(i + 1);
@@ -168,7 +169,7 @@ export async function parseProductSheet(data: ArrayBuffer): Promise<Record<strin
   ws.getRow(1).eachCell({ includeEmpty: true }, (cell, col) => {
     keys[col] = HEADER_KEYS.get(norm(cell.text ?? "")) ?? null;
   });
-  if (!keys.includes("sku") || !keys.includes("name")) throw new UserError("The first row must contain the template headings (SKU, Product name, …). Download a fresh template and try again.");
+  if (!keys.includes("name")) throw new UserError("The first row must contain the template headings (Product name, Category, …). Download a fresh template and try again.");
 
   const rows: Record<string, string>[] = [];
   ws.eachRow({ includeEmpty: false }, (row, n) => {

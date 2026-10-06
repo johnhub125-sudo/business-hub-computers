@@ -2,6 +2,7 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { parseCsv } from "@/lib/csv";
 import { audit } from "@/server/audit";
@@ -9,6 +10,7 @@ import { db } from "@/server/db";
 import { productImages, products } from "@/server/db/schema";
 import { runAction, UserError } from "@/server/errors";
 import { requirePermission } from "@/server/session";
+import { addPhotoFromLink, findPhotosBatch, photoSearchReady, photosWaiting, refindPhoto, requeueAllPhotos, keepGeneratedPicture } from "@/server/services/product-photos";
 import { parseProductSheet } from "@/server/services/product-sheet";
 import { bulkUpdate, importProducts, saveProduct } from "@/server/services/products";
 import { deleteFile, uploadFile } from "@/server/storage";
@@ -88,7 +90,72 @@ export async function importProductsAction(fd: FormData) {
     if (res.ok && !dryRun) {
       revalidatePath("/admin/products");
       revalidatePath("/", "layout");
+      // Start looking for real photos straight away; the admin screen and the daily job carry on.
+      after(() => findPhotosBatch(2, staff.id).catch(() => {}));
+    }
+    return { ...res, photos: res.ok && !dryRun ? { ready: photoSearchReady(), waiting: await photosWaiting() } : null };
+  });
+}
+
+/* ───────────── product pictures (real photos) ───────────── */
+
+/** Looks up real photos for the next few waiting products. The admin screen calls it repeatedly. */
+export async function findPhotosAction() {
+  return runAction(async () => {
+    const staff = await requirePermission("products.edit");
+    const res = await findPhotosBatch(3, staff.id);
+    if (res.found) {
+      revalidatePath("/admin/products");
+      revalidatePath("/", "layout");
     }
     return res;
   });
+}
+
+/** Puts every product that still has no real photo back in the search queue. */
+export async function requeuePhotosAction() {
+  return runAction(async () => {
+    const staff = await requirePermission("products.edit");
+    const count = await requeueAllPhotos();
+    await audit({ actor: staff, action: "product.photos_requeued", module: "Products", description: `Queued ${count} product(s) for a new photo search` });
+    return { count, waiting: await photosWaiting() };
+  });
+}
+
+/** Searches again for one product, replacing a photo that was found automatically. */
+export async function refindPhotoAction(productId: string) {
+  return runAction(async () => {
+    const staff = await requirePermission("products.edit");
+    const id = z.string().uuid().parse(productId);
+    const outcome = await refindPhoto(id, staff.id);
+    await audit({ actor: staff, action: "product.photo_searched", module: "Products", description: `Photo search: ${outcome}`, entityType: "product", entityId: id });
+    revalidatePath(`/admin/products/${id}`);
+    revalidatePath("/", "layout");
+    if (outcome === "not_found") throw new UserError("No suitable photo was found. The 3D picture stays in place — you can upload a photo or paste a picture link instead.");
+  }, "Photo found and added");
+}
+
+/** Removes automatically found photos and keeps the generated 3D picture for this product. */
+export async function keepGeneratedPictureAction(productId: string) {
+  return runAction(async () => {
+    const staff = await requirePermission("products.edit");
+    const id = z.string().uuid().parse(productId);
+    const removed = await keepGeneratedPicture(id);
+    await audit({ actor: staff, action: "product.photo_reset", module: "Products", description: `Switched to the 3D picture (${removed} auto photo(s) removed)`, entityType: "product", entityId: id });
+    revalidatePath(`/admin/products/${id}`);
+    revalidatePath("/", "layout");
+  }, "Using the 3D picture");
+}
+
+/** Adds a picture from a link, e.g. copied from the manufacturer's product page. */
+export async function addPhotoFromLinkAction(productId: string, link: string) {
+  return runAction(async () => {
+    const staff = await requirePermission("products.edit");
+    const id = z.string().uuid().parse(productId);
+    const url = z.string().trim().url("Paste a full picture link starting with https://").max(2000).parse(link);
+    await addPhotoFromLink(id, url, staff.id);
+    await audit({ actor: staff, action: "product.images_added", module: "Products", description: "Added a picture from a link", entityType: "product", entityId: id });
+    revalidatePath(`/admin/products/${id}`);
+    revalidatePath("/", "layout");
+  }, "Picture added");
 }
