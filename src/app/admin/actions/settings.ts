@@ -46,7 +46,7 @@ const SCHEMAS = {
   receipt: z.object({ footer: str(300), showWarranty: bool }),
   delivery: z.object({ collectionInstructions: str(1000), defaultEtaDays: int(0, 30) }),
   notifications: z.object({ adminAlertEmail: z.string().trim().email().or(z.literal("")), emailEnabled: bool, whatsappEnabled: bool }),
-  security: z.object({ maxFailedLogins: int(3, 20), lockMinutes: int(1, 1440), sessionDays: int(1, 90), requireAdmin2fa: bool, requireEmailVerification: bool }),
+  security: z.object({ maxFailedLogins: int(3, 20), lockMinutes: int(1, 1440), sessionDays: int(1, 90), requireAdmin2fa: bool, requireEmailVerification: bool, staffSessionHours: int(1, 168) }),
   seo: z.object({ defaultTitle: str(120).min(5), defaultDescription: str(300), keywords: str(500), ogImage: str(500) }),
   analytics: z.object({ vercelAnalytics: bool, speedInsights: bool }),
   storefront: z.object({
@@ -82,6 +82,11 @@ export async function saveSettingsAction(key: string, values: unknown, confirmat
         if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") throw new UserError("LIVE mode can only be enabled on the production deployment.");
       }
       if (!p.paystackEnabled && !p.bankTransferEnabled) throw new UserError("At least one payment method must stay enabled.");
+    }
+    if (k === "security") {
+      const sec = next as z.infer<typeof SCHEMAS.security>;
+      // Never let someone lock every admin (including themselves) out by switching this on without 2FA.
+      if (sec.requireAdmin2fa && !before.requireAdmin2fa && !staff.twoFactorEnabled) throw new UserError("Set up two-factor authentication on your own account first (Security & health), then switch this on.");
     }
     if (k === "tax") {
       const t = next as z.infer<typeof SCHEMAS.tax>;

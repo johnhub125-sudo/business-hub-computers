@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 /**
  * Minimal, XSS-safe Markdown renderer for CMS pages (headings, paragraphs, lists, **bold**,
- * [links](/path)). Produces React elements — never injects raw HTML.
+ * numbered steps, [links](/path)). Produces React elements — never injects raw HTML.
  */
 function inline(text: string, key: string): ReactNode[] {
   const out: ReactNode[] = [];
@@ -48,20 +48,25 @@ export function Markdown({ source, skipTitle }: { source: string; skipTitle?: bo
       buffer = [];
     };
     let list: string[] = [];
+    let ordered = false;
     const flushList = () => {
-      if (list.length)
+      if (list.length) {
+        const Tag = ordered ? "ol" : "ul";
         nodes.push(
-          <ul key={`u${bi}-${nodes.length}`}>
+          <Tag key={`u${bi}-${nodes.length}`}>
             {list.map((li, k) => (
               <li key={k}>{inline(li, `li${bi}${k}`)}</li>
             ))}
-          </ul>,
+          </Tag>,
         );
+      }
       list = [];
     };
     for (const line of lines) {
       const h = line.match(/^(#{1,3})\s+(.*)$/);
-      const li = line.match(/^\s*[-*]\s+(.*)$/);
+      const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+      const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+      const li = bullet ?? numbered;
       if (h) {
         flushPara();
         flushList();
@@ -70,6 +75,8 @@ export function Markdown({ source, skipTitle }: { source: string; skipTitle?: bo
         nodes.push(<Tag key={`h${bi}-${nodes.length}`}>{h[2]}</Tag>);
       } else if (li) {
         flushPara();
+        if (list.length && ordered !== Boolean(numbered)) flushList();
+        ordered = Boolean(numbered);
         list.push(li[1]);
       } else {
         flushList();

@@ -124,8 +124,12 @@ export async function createRefund(secret: string, input: { transaction: string 
 }
 
 /** Lightweight credential check for the admin "Test connection" button. */
+/**
+ * Proves a secret key is genuine. Must hit an endpoint that requires authentication: Paystack's bank
+ * list is public and answers 200 for any key, so it cannot be used for this.
+ */
 export async function testConnection(secret: string) {
-  await call<unknown>(secret, "/bank?country=nigeria&perPage=1");
+  await call<unknown>(secret, "/transaction?perPage=1");
   return true;
 }
 

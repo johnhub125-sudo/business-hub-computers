@@ -1,4 +1,5 @@
 /** Development/demo catalogue & content. Prices are in NAIRA here and converted to kobo on insert. */
+import { POLICY_PAGES } from "./policy-texts";
 
 export const CONDITIONS = [
   { name: "Brand New", slug: "brand-new", isCollection: true, sortOrder: 1, description: "Factory-sealed with full manufacturer warranty." },
@@ -283,48 +284,7 @@ export const FAQS = [
 const policy = (title: string, body: string[]) => `# ${title}\n\n${body.join("\n\n")}`;
 
 export const PAGES = [
-  { slug: "terms", title: "Terms and Conditions", body: policy("Terms and Conditions", [
-    "These terms govern your use of the Business Hub Computers website and your purchases from us. By placing an order you agree to them.",
-    "## Orders and pricing\nAll prices are in Nigerian Naira (₦). VAT at the prevailing rate and logistics charges are calculated at checkout. An order is confirmed only after payment has been verified.",
-    "## Payment\nOnline payments are processed securely by Paystack. Bank transfers are confirmed by our finance team before an order is processed.",
-    "## Delivery and collection\nDelivery timelines are estimates. Risk passes to you on delivery or collection.",
-    "## Warranty\nWarranty terms are shown on each product and on your receipt. Physical damage, liquid damage and unauthorised repairs are not covered.",
-    "## Contact\nQuestions? Call +234 803 394 1858 or email businesshubby@gmail.com.",
-  ]) },
-  { slug: "privacy", title: "Privacy Policy", body: policy("Privacy Policy", [
-    "We respect your privacy and comply with the Nigeria Data Protection Act 2023 (NDPA).",
-    "## What we collect\nYour name, email, phone/WhatsApp number, delivery address and order history — only what we need to fulfil orders and support you.",
-    "## Payments\nCard details are handled by Paystack. We never see or store card numbers, CVV, PIN or OTP.",
-    "## How we use your data\nTo process orders, arrange delivery, send receipts and service messages, provide warranty support and (with consent) send offers.",
-    "## Your rights\nYou can request a copy of your data, correction or deletion from your account's Security page or by contacting us. Financial records are retained as required by law.",
-    "## Cookies\nWe use essential cookies for sign-in and your cart, and privacy-friendly analytics. See our Cookie Policy.",
-  ]) },
-  { slug: "shipping", title: "Shipping Policy", body: policy("Shipping Policy", [
-    "We deliver nationwide by door delivery or collection through designated motor parks and agents.",
-    "## Costs\nLogistics costs depend on your state and city and are calculated automatically at checkout.",
-    "## Timelines\nIbadan: same/next day. South-West: 1–3 working days. Other regions: 2–7 working days after payment confirmation.",
-    "## Collection\nFor motor-park collection our agent will contact you by WhatsApp or phone with the collection point and expected date.",
-  ]) },
-  { slug: "returns", title: "Returns Policy", body: policy("Returns Policy", [
-    "If your item arrives faulty or not as described, contact us within 48 hours of delivery.",
-    "## Eligibility\nItems must be returned with all accessories and packaging. Physical or liquid damage is not eligible.",
-    "## Process\nOpen a support ticket from your account or call us. Our technicians will inspect and repair, replace or refund as appropriate.",
-  ]) },
-  { slug: "refund-policy", title: "Refund Policy", body: policy("Refund Policy", [
-    "Approved refunds are returned to the original payment method.",
-    "## Timelines\nPaystack refunds typically reflect within 5–10 working days depending on your bank. Bank transfer refunds are paid within 3 working days of approval.",
-    "## Partial refunds\nWhere only part of an order is affected, a partial refund may be issued.",
-  ]) },
-  { slug: "warranty", title: "Warranty Policy", body: policy("Warranty Policy", [
-    "Brand-new products carry the manufacturer's warranty. UK-used products carry the Business Hub warranty stated on the product page and receipt.",
-    "## What's covered\nHardware faults under normal use.",
-    "## Not covered\nPhysical damage, liquid damage, power surges, software issues caused by the user, and unauthorised repairs.",
-    "## Making a claim\nBring or send the item with your receipt number. We'll assess it within 48 hours.",
-  ]) },
-  { slug: "cookies", title: "Cookie Policy", body: policy("Cookie Policy", [
-    "We use essential cookies to keep you signed in, remember your cart and protect against fraud. These cannot be turned off.",
-    "We also use privacy-friendly analytics that do not identify you personally. You can decline non-essential cookies in the cookie banner.",
-  ]) },
+  ...POLICY_PAGES,
   { slug: "about", title: "About Us", body: policy("About Business Hub Computers", [
     "Business-Hub Computers is a trusted supplier of new and UK-used laptops, computers, IT equipment, and accessories serving individuals, businesses, schools, offices, and organizations in Nigeria.",
     "The company is committed to providing quality, reliable, and affordable technology while helping customers choose the right technology for work, business, education and personal use.",

@@ -141,7 +141,7 @@ export const auth = betterAuth({
       create: {
         before: async (session) => {
           const [u] = await db
-            .select({ status: schema.user.status, emailVerified: schema.user.emailVerified })
+            .select({ status: schema.user.status, emailVerified: schema.user.emailVerified, userType: schema.user.userType })
             .from(schema.user)
             .where(eq(schema.user.id, session.userId));
           if (!u || BLOCKED_STATUSES.has(u.status)) {
@@ -151,6 +151,12 @@ export const auth = betterAuth({
           if (!u.emailVerified) {
             const live = await getSetting("security").catch(() => security);
             if (live.requireEmailVerification) throw new APIError("FORBIDDEN", { message: "Please verify your email address before signing in." });
+          }
+          // Staff sessions are short-lived: a forgotten, signed-in admin browser stops working by itself.
+          if (u.userType === "staff") {
+            const live = await getSetting("security").catch(() => security);
+            const hours = Math.min(Math.max(Number(live.staffSessionHours) || 12, 1), 168);
+            return { data: { ...session, expiresAt: new Date(Date.now() + hours * 3_600_000) } };
           }
         },
       },

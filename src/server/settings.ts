@@ -53,7 +53,7 @@ export const SETTINGS_DEFAULTS = {
     defaultEtaDays: 3,
   },
   notifications: { adminAlertEmail: "" as string, emailEnabled: true, whatsappEnabled: true },
-  security: { maxFailedLogins: 5, lockMinutes: 15, sessionDays: 7, requireAdmin2fa: false, requireEmailVerification: false },
+  security: { maxFailedLogins: 5, lockMinutes: 15, sessionDays: 7, requireAdmin2fa: false, requireEmailVerification: false, staffSessionHours: 12 },
   seo: {
     defaultTitle: `${BRAND_DEFAULTS.company.name} — ${BRAND_DEFAULTS.company.tagline}`,
     defaultDescription:

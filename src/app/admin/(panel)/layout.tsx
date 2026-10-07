@@ -39,8 +39,8 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
         logo={company.logo}
         badges={{ "/admin/staff": pendingStaff.n, "/admin/payments": transfers.n, "/admin/reviews": pendingReviews.n, "/admin/support": openTickets.n }}
       />
-      <div className="lg:pl-64 print:pl-0">
-        <header className="sticky top-0 z-20 flex h-16 print:hidden items-center gap-3 border-b border-line bg-white/95 px-4 pl-16 backdrop-blur lg:pl-6">
+      <div className="admin-shell min-h-dvh lg:pl-64 print:pl-0">
+        <header className="sticky top-0 z-20 flex h-16 print:hidden items-center gap-3 border-b border-line/80 bg-white/80 px-4 pl-16 shadow-[0_1px_12px_-6px_rgb(27_42_123/0.18)] backdrop-blur-xl lg:pl-6">
           <form action="/admin/search" className="relative max-w-md flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
             <label htmlFor="admin-q" className="sr-only">
@@ -60,7 +60,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
             {unread.n > 0 && <span className="absolute right-0.5 top-0.5 grid min-w-4 place-items-center rounded-full bg-accent-500 px-1 text-[10px] font-bold leading-4 text-white">{unread.n}</span>}
           </Link>
           <Link href="/admin/security" className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-surface">
-            <span className="grid size-8 place-items-center rounded-full bg-brand-700 text-xs font-bold text-white">{initials(staff.name)}</span>
+            <span className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-800 text-xs font-bold text-white shadow-sm ring-2 ring-white">{initials(staff.name)}</span>
             <span className="hidden text-left leading-tight md:block">
               <span className="block text-sm font-semibold">{staff.name}</span>
               <span className="block text-[11px] text-muted">{staff.roleLabel}</span>

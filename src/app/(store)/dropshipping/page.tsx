@@ -56,7 +56,7 @@ export default async function DropshippingPage({ searchParams }: PageProps<"/dro
             {company.name} works with trusted supplying companies. Order their goods here, pay securely, and they ship directly to you — with our receipt, warranty and support.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
-            <ButtonLink href="/login?next=/dropshipping" size="lg" className="btn-3d bg-accent-500 text-white hover:bg-accent-600">
+            <ButtonLink href="/login?next=/dropshipping" size="lg" variant="accent">
               <LockKeyhole className="size-4" aria-hidden /> Sign in to view the goods
             </ButtonLink>
             <ButtonLink href="/register?next=/dropshipping" size="lg" variant="outline" className="border-white/30 bg-white/10 text-white hover:bg-white/20">

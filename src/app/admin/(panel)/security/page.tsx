@@ -27,6 +27,9 @@ export default async function AdminSecurityPage({ searchParams }: PageProps<"/ad
   return (
     <div className="space-y-6">
       <AdminHeader title="Security & health" description="Your account security, and (for security managers) system health and security events." />
+      {sp.need2fa === "1" && !staff.twoFactorEnabled && (
+        <p className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-900 ring-4 ring-amber-100">Two-factor authentication is required for staff. Set it up below to continue using the admin.</p>
+      )}
       <div className="grid gap-6 xl:grid-cols-2">
         <div className="space-y-6">
           <ChangePasswordCard forced={staff.mustChangePassword || sp.first === "1"} />

@@ -149,14 +149,15 @@ export function Pagination({ page, pages, hrefFor }: { page: number; pages: numb
 export function StatCard({ label, value, hint, icon, tone = "brand" }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; tone?: "brand" | "accent" | "success" | "warning" }) {
   const toneCls = { brand: "bg-brand-50 text-brand-700", accent: "bg-accent-50 text-accent-600", success: "bg-emerald-50 text-emerald-700", warning: "bg-amber-50 text-amber-700" }[tone];
   return (
-    <Card className="p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3">
+    <Card className="stat-card group relative overflow-hidden p-4 sm:p-5" data-tone={tone}>
+      <span className="stat-glow" aria-hidden />
+      <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-muted">{label}</p>
-          <p className="mt-1 truncate text-2xl font-extrabold tracking-tight text-ink">{value}</p>
+          <p className="mt-1 truncate text-2xl font-extrabold tracking-tight text-ink sm:text-[1.7rem]">{value}</p>
           {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
         </div>
-        {icon && <div className={cn("grid size-10 shrink-0 place-items-center rounded-xl [&_svg]:size-5", toneCls)}>{icon}</div>}
+        {icon && <div className={cn("grid size-11 shrink-0 place-items-center rounded-2xl shadow-sm ring-1 ring-black/5 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:scale-105 [&_svg]:size-5", toneCls)}>{icon}</div>}
       </div>
     </Card>
   );

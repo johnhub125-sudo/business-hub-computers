@@ -11,7 +11,7 @@ export function AdminHeader({ title, description, actions, back }: { title: stri
             ← {back.label}
           </Link>
         )}
-        <h1 className="font-display text-2xl font-extrabold tracking-tight text-ink">{title}</h1>
+        <h1 className="admin-title font-display text-2xl font-extrabold tracking-tight text-ink sm:text-[1.7rem]">{title}</h1>
         {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -21,9 +21,9 @@ export function AdminHeader({ title, description, actions, back }: { title: stri
 
 export function Panel({ title, actions, children, className, bodyClassName }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; bodyClassName?: string }) {
   return (
-    <section className={cn("rounded-2xl border border-line bg-white", className)}>
+    <section className={cn("panel rounded-2xl border border-line bg-white", className)}>
       {(title || actions) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-gradient-to-r from-surface/70 to-white px-5 py-3.5">
           {title && <h2 className="font-bold">{title}</h2>}
           {actions}
         </div>
@@ -36,9 +36,9 @@ export function Panel({ title, actions, children, className, bodyClassName }: { 
 /** Responsive table: horizontal scroll on small screens, sticky header. */
 export function Table({ head, children, empty }: { head: ReactNode[]; children: ReactNode; empty?: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-line bg-white">
+    <div className="panel overflow-x-auto rounded-2xl border border-line bg-white">
       <table className="w-full min-w-[720px] text-sm">
-        <thead className="bg-surface text-left text-xs uppercase tracking-wide text-muted">
+        <thead className="bg-gradient-to-r from-brand-50/80 to-surface text-left text-xs uppercase tracking-wide text-brand-800/80">
           <tr>
             {head.map((h, i) => (
               <th key={i} scope="col" className="whitespace-nowrap px-4 py-3 font-semibold">

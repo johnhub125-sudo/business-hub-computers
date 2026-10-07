@@ -70,7 +70,8 @@ export const SETTINGS_SPECS: Record<string, { title: string; description?: strin
       { name: "maxFailedLogins", label: "Lock after failed logins", type: "number" },
       { name: "lockMinutes", label: "Lock duration (minutes)", type: "number" },
       { name: "sessionDays", label: "Session length (days)", type: "number", hint: "Applies after the next deployment" },
-      { name: "requireAdmin2fa", label: "Strongly require 2FA for administrators", type: "boolean" },
+      { name: "requireAdmin2fa", label: "Staff must use two-factor authentication", type: "boolean", hint: "On: staff without 2FA are sent to set it up before they can use the admin. Set up your own 2FA first." },
+      { name: "staffSessionHours", label: "Staff are signed out after (hours)", type: "number", hint: "1 to 168. Customers stay signed in for the session length above." },
       {
         name: "requireEmailVerification",
         label: "Customers must verify their email before signing in and ordering",

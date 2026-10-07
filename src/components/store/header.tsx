@@ -16,9 +16,9 @@ export async function SiteHeader() {
   const firstName = me?.name.split(" ")[0];
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
+    <header className="site-header sticky top-0 z-40 bg-white/95 backdrop-blur-xl supports-[backdrop-filter]:bg-white/80">
       {/* Announcement bar */}
-      <div className="bg-brand-950 text-white">
+      <div className="topbar text-white">
         <div className="container-page flex h-9 items-center justify-between gap-4 text-[12.5px]">
           <p className="truncate">
             <Truck className="mr-1.5 inline size-3.5 -translate-y-px text-accent-300" aria-hidden />

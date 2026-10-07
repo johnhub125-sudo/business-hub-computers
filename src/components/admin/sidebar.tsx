@@ -39,7 +39,7 @@ export function AdminSidebar({ groups, badges, logo }: { groups: NavGroup[]; bad
                   <Link
                     href={it.href}
                     aria-current={active ? "page" : undefined}
-                    className={cn("flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-medium transition", active ? "bg-white/12 text-white" : "text-brand-100/85 hover:bg-white/6 hover:text-white")}
+                    className={cn("flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-medium transition", active ? "nav-active text-white" : "text-brand-100/85 hover:translate-x-0.5 hover:bg-white/6 hover:text-white")}
                   >
                     <Icon name={it.icon} className="size-4 shrink-0" />
                     <span className="truncate">{it.label}</span>
@@ -55,7 +55,7 @@ export function AdminSidebar({ groups, badges, logo }: { groups: NavGroup[]; bad
   );
 
   const shell = (
-    <div className="flex h-full flex-col bg-brand-950">
+    <div className="admin-sidebar flex h-full flex-col">
       <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
         <Link href="/admin/dashboard" className="rounded-lg bg-white px-2 py-1">
           <Image src={logo} alt="Business Hub Computers admin" width={640} height={170} className="h-7 w-auto" />

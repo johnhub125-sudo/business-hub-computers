@@ -123,6 +123,7 @@ export async function requirePermission(...needed: Permission[]): Promise<StaffC
   if (!s) throw new UnauthorizedError();
   if (!staffIsActive(s)) throw new ForbiddenError("Your staff account is not active.");
   if (s.mustChangePassword) throw new ForbiddenError("Please change your temporary password before making changes.");
+  if (!s.twoFactorEnabled && (await getSetting("security")).requireAdmin2fa) throw new ForbiddenError("Set up two-factor authentication (Security & health) before making changes.");
   for (const p of needed) {
     if (!s.permissions.has(p)) throw new ForbiddenError("You do not have permission to perform this action.");
   }
@@ -154,6 +155,10 @@ export async function requireStaffPage(needed?: Permission) {
   if (s.mustChangePassword) {
     const path = (await headers()).get("x-pathname") ?? "";
     if (!path.startsWith("/admin/security")) redirect("/admin/security?first=1");
+  }
+  if (!s.twoFactorEnabled && (await getSetting("security")).requireAdmin2fa) {
+    const path = (await headers()).get("x-pathname") ?? "";
+    if (!path.startsWith("/admin/security")) redirect("/admin/security?need2fa=1");
   }
   if (needed && !s.permissions.has(needed)) redirect("/forbidden");
   return s;
