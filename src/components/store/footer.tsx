@@ -28,6 +28,7 @@ export async function SiteFooter() {
         ["/about", "About us"],
         ["/about#services", "Services"],
         ["/projects", "Projects"],
+        ["/dropshipping", "Dropshipping"],
         ["/team", "Our team"],
         ["/gallery", "Gallery"],
         ["/contact", "Contact"],

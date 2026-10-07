@@ -103,7 +103,7 @@ describe("Excel product import", () => {
     expect(shop.items[0].image).toMatch(/^\/product-art\/.+\.svg$/);
   });
 
-  it("updates a product with the same name and condition, without wiping blank cells or re-adding stock", async () => {
+  it("updates a product with the same name and condition: blank cells are kept, stock follows the sheet", async () => {
     await importProducts(await fillTemplate([{ name: "HP EliteBook 840 G8", category: "Computers", condition: "UK Used", price: 520000, stock: 4, specifications: "RAM: 16GB", featured: "Yes" }]), staff, false);
     const res = await importProducts(
       await fillTemplate([
@@ -117,7 +117,7 @@ describe("Excel product import", () => {
     const all = await db.select().from(products).orderBy(products.sku);
     expect(all.map((p) => p.sku)).toEqual(["BHC-COM-0001", "BHC-COM-0002"]);
     expect(all[0]).toMatchObject({ price: 49_900_000, isFeatured: true, specifications: { RAM: "16GB" } });
-    expect(await stockOf(all[0].id)).toBe(4);
+    expect(await stockOf(all[0].id)).toBe(9); // the sheet said 9, so stock is now 9 (not 4 + 9)
   });
 
   it("still accepts a file that brings its own SKUs", async () => {

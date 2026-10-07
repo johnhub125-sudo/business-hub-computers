@@ -124,6 +124,10 @@ export const products = pgTable(
     ratingCount: integer().notNull().default(0),
     soldCount: integer().notNull().default(0),
     viewCount: integer().notNull().default(0),
+    /** "stock" = sold from our own shelves; "dropship" = supplied and shipped by a partner company after the order. */
+    fulfilment: text().notNull().default("stock"),
+    dropshipPartner: text(),
+    dropshipLeadDays: integer(),
     /** Real-photo search: pending → found | not_found; "off" = staff chose to keep the automatic picture. */
     photoSearch: text().notNull().default("pending"),
     photoCheckedAt: ts(),

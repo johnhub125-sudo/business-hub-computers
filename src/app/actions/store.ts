@@ -5,7 +5,7 @@ import { refresh, revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/server/db";
-import { customerMessages, newsletterSubscribers, productComparisons, productQuestions, productVariants, wishlistItems, wishlists } from "@/server/db/schema";
+import { customerMessages, newsletterSubscribers, productComparisons, productQuestions, productVariants, products, wishlistItems, wishlists } from "@/server/db/schema";
 import { runAction, UnauthorizedError, UserError } from "@/server/errors";
 import { enforceRateLimit } from "@/server/ratelimit";
 import { getCurrentUser, requireCustomerOrThrow } from "@/server/session";
@@ -22,8 +22,13 @@ const uuid = z.string().uuid();
 export async function addToCartAction(variantId: string, quantity = 1) {
   return runAction(async () => {
     uuid.parse(variantId);
-    const orders = await getSetting("orders");
-    if (!orders.allowGuestCart && !(await getCurrentUser())) throw new UnauthorizedError("Please sign in or create an account to add items to your cart.");
+    const [orders, me] = await Promise.all([getSetting("orders"), getCurrentUser()]);
+    if (!orders.allowGuestCart && !me) throw new UnauthorizedError("Please sign in or create an account to add items to your cart.");
+    if (!me) {
+      // Dropship (partner) goods are for signed-in customers only — enforced here, not just in the pages.
+      const [v] = await db.select({ fulfilment: products.fulfilment }).from(productVariants).innerJoin(products, eq(products.id, productVariants.productId)).where(eq(productVariants.id, variantId));
+      if (v?.fulfilment === "dropship") throw new UnauthorizedError("Please sign in to order dropship goods.");
+    }
     const res = await cart.addItem(variantId, quantity);
     refresh();
     return { quantity: res.quantity, count: await cart.cartCount() };

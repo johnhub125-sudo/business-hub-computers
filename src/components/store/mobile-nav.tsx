@@ -86,6 +86,7 @@ export function MobileNav({ nav, signedIn, phone, whatsapp }: { nav: Nav; signed
               ["/brands", "Brands"],
               ["/about", "About us"],
               ["/projects", "Projects"],
+              ["/dropshipping", "Dropshipping"],
               ["/gallery", "Gallery"],
               ["/team", "Our team"],
               ["/track-order", "Track order"],

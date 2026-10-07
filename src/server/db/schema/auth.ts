@@ -272,3 +272,24 @@ export const securityEvents = pgTable(
   },
   (t) => [index("security_events_user_idx").on(t.userId), index("security_events_created_idx").on(t.createdAt)],
 );
+
+/** WebAuthn credentials ("quick sign-in"): fingerprint / face / device PIN. Managed by the Better Auth passkey plugin. */
+export const passkey = pgTable(
+  "passkey",
+  {
+    id: text().primaryKey(),
+    name: text(),
+    publicKey: text().notNull(),
+    userId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    credentialID: text("credential_id").notNull(),
+    counter: integer().notNull(),
+    deviceType: text().notNull(),
+    backedUp: boolean().notNull(),
+    transports: text(),
+    createdAt: timestamp({ withTimezone: true }),
+    aaguid: text(),
+  },
+  (t) => [index("passkey_user_idx").on(t.userId), index("passkey_credential_idx").on(t.credentialID)],
+);

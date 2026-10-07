@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { Fingerprint } from "lucide-react";
+import { useEffect, useState } from "react";
 import { afterSignInAction } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Field, FormError, FormSuccess, Input } from "@/components/ui/form";
@@ -30,6 +31,8 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(notice ?? null);
   const [pending, setPending] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -60,12 +63,51 @@ export function LoginForm({
     router.refresh();
   }
 
+  async function finishPasskey(res: { error?: { message?: string; status?: number } | null } | undefined, quiet: boolean) {
+    if (!res || res.error) {
+      // Cancelled prompts and "no passkey on this device" are normal: say nothing unless the user asked.
+      if (!quiet && res?.error && !/cancel|abort|not allowed|timed out/i.test(res.error.message ?? "")) setError(res.error.status === 403 ? (res.error.message ?? "This account cannot sign in.") : "Quick sign-in did not work on this device. Use your email and password instead.");
+      return;
+    }
+    setPending(true);
+    const { redirect } = await afterSignInAction(next ?? null, area);
+    router.push(redirect);
+    router.refresh();
+  }
+
+  async function passkeySignIn() {
+    setError(null);
+    setInfo(null);
+    setPasskeyBusy(true);
+    const res = await authClient.signIn.passkey().catch(() => undefined);
+    setPasskeyBusy(false);
+    await finishPasskey(res, false);
+  }
+
+  // If this device has a saved sign-in for the site, the browser offers the account(s) as soon as the
+  // email box is focused, and the customer picks which one to use. Nothing happens unless they do.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (typeof window === "undefined" || !window.PublicKeyCredential) return;
+      setPasskeySupported(true);
+      const conditional = await window.PublicKeyCredential.isConditionalMediationAvailable?.().catch(() => false);
+      if (!conditional || !active) return;
+      const res = await authClient.signIn.passkey({ autoFill: true }).catch(() => undefined);
+      if (active) await finishPasskey(res, true);
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- start the browser's account picker once
+  }, []);
+
   return (
     <form method="post" onSubmit={onSubmit} className="space-y-4" noValidate>
       <FormError message={error} />
       <FormSuccess message={info} />
       <Field label="Email address" htmlFor="email" required>
-        <Input id="email" name="email" type="email" autoComplete="username" required />
+        <Input id="email" name="email" type="email" autoComplete="username webauthn" required />
       </Field>
       <Field label="Password" htmlFor="password" required>
         <PasswordInput id="password" name="password" autoComplete="current-password" required />
@@ -81,6 +123,17 @@ export function LoginForm({
       <Button type="submit" block size="lg" loading={pending}>
         Sign in
       </Button>
+      {passkeySupported && (
+        <>
+          <div className="flex items-center gap-3 text-xs text-muted" aria-hidden>
+            <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />
+          </div>
+          <Button type="button" block size="lg" variant="outline" loading={passkeyBusy} onClick={passkeySignIn}>
+            <Fingerprint className="size-5" aria-hidden /> Quick sign-in on this device
+          </Button>
+          <p className="text-center text-xs text-muted">Uses your fingerprint, face or screen lock. Switch it on first under Account → Security.</p>
+        </>
+      )}
     </form>
   );
 }

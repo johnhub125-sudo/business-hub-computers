@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import type { Metadata } from "next";
-import { ChangePasswordCard, SessionsCard, TwoFactorCard } from "@/components/account/security-panel";
+import { ChangePasswordCard, PasskeyCard, SessionsCard, TwoFactorCard } from "@/components/account/security-panel";
 import { SendTestEmailButton } from "@/components/admin/email-controls";
 import { AdminHeader, Panel, Table } from "@/components/admin/ui";
 import { Badge } from "@/components/ui/misc";
@@ -31,6 +31,7 @@ export default async function AdminSecurityPage({ searchParams }: PageProps<"/ad
         <div className="space-y-6">
           <ChangePasswordCard forced={staff.mustChangePassword || sp.first === "1"} />
           <TwoFactorCard enabled={staff.twoFactorEnabled} recommended />
+          <PasskeyCard />
         </div>
         <SessionsCard currentToken={session?.session.token} />
       </div>

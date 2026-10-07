@@ -37,6 +37,9 @@ export type ProductForm = {
   supplierId: string;
   weightGrams: string;
   dimensions: string;
+  fulfilment: "stock" | "dropship";
+  dropshipPartner: string;
+  dropshipLeadDays: string;
   status: "draft" | "active" | "archived";
   flags: Record<"isFeatured" | "isDeal" | "isNewArrival" | "isBestSeller" | "isClearance" | "isRecommended" | "isTrending", boolean>;
   seoTitle: string;
@@ -146,6 +149,9 @@ export function ProductEditor({
       supplierId: clean(f.supplierId),
       weightGrams: f.weightGrams || null,
       dimensions: clean(f.dimensions),
+      fulfilment: f.fulfilment,
+      dropshipPartner: clean(f.dropshipPartner),
+      dropshipLeadDays: f.dropshipLeadDays || null,
       status: f.status,
       ...f.flags,
       seoTitle: clean(f.seoTitle),
@@ -527,6 +533,26 @@ export function ProductEditor({
             <Field label="Dimensions" htmlFor="dims">
               <Input id="dims" value={f.dimensions} onChange={(e) => set("dimensions", e.target.value)} placeholder="e.g. 36 × 24 × 2 cm" />
             </Field>
+          </div>
+        </Section>
+        <Section title="Supply" description="Where the goods come from. Dropship goods are shown on the Dropshipping page to signed-in customers.">
+          <div className="space-y-3">
+            <Field label="Supplied from" htmlFor="fulfilment">
+              <Select id="fulfilment" value={f.fulfilment} onChange={(e) => set("fulfilment", e.target.value as ProductForm["fulfilment"])}>
+                <option value="stock">Our own stock</option>
+                <option value="dropship">Dropship — a partner company ships it</option>
+              </Select>
+            </Field>
+            {f.fulfilment === "dropship" && (
+              <>
+                <Field label="Partner company" htmlFor="dsp" required error={fieldErrors.dropshipPartner}>
+                  <Input id="dsp" value={f.dropshipPartner} onChange={(e) => set("dropshipPartner", e.target.value)} placeholder="e.g. TechSource Distribution Ltd" />
+                </Field>
+                <Field label="Usual delivery time (days)" htmlFor="dsd" hint="Shown to customers on the product page">
+                  <Input id="dsd" type="number" min={0} max={120} value={f.dropshipLeadDays} onChange={(e) => set("dropshipLeadDays", e.target.value)} />
+                </Field>
+              </>
+            )}
           </div>
         </Section>
       </aside>

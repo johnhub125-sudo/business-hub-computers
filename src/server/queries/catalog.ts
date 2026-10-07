@@ -46,6 +46,8 @@ export const cardFields = {
   artSpecs: products.specifications,
   variantCount: variantCountExpr,
   variantId: defaultVariantExpr,
+  fulfilment: products.fulfilment,
+  dropshipLeadDays: products.dropshipLeadDays,
   isDeal: products.isDeal,
   isNewArrival: products.isNewArrival,
   isBestSeller: products.isBestSeller,
@@ -74,6 +76,9 @@ export type ProductCardData = {
   isNewArrival: boolean;
   isBestSeller: boolean;
   isClearance: boolean;
+  /** "dropship" = supplied and shipped by a partner company. */
+  fulfilment: string;
+  dropshipLeadDays: number | null;
   warranty: string | null;
   createdAt: Date;
 };
@@ -136,6 +141,8 @@ export type ProductFilters = {
   sort?: SortKey;
   page?: number;
   perPage?: number;
+  /** Default "stock": the normal shop lists only our own stock. Dropship goods live on /dropshipping. */
+  fulfilment?: "stock" | "dropship" | "all";
 };
 
 const specMatch = (key: string, values: string[]) =>
@@ -150,6 +157,8 @@ export async function listProducts(f: ProductFilters) {
   const perPage = Math.min(Math.max(f.perPage ?? 24, 1), 60);
   const page = Math.max(f.page ?? 1, 1);
   const where: (SQL | undefined)[] = [visible];
+  const fulfilment = f.fulfilment ?? "stock";
+  if (fulfilment !== "all") where.push(eq(products.fulfilment, fulfilment));
 
   if (f.category) {
     const [cat] = await db.select({ id: categories.id }).from(categories).where(eq(categories.slug, f.category));
@@ -277,7 +286,7 @@ export async function searchSuggestions(q: string) {
     .innerJoin(categories, eq(categories.id, products.categoryId))
     .innerJoin(productConditions, eq(productConditions.id, products.conditionId))
     .leftJoin(brands, eq(brands.id, products.brandId))
-    .where(and(visible, or(ilike(products.name, like), ilike(products.sku, like), ilike(brands.name, like))))
+    .where(and(visible, eq(products.fulfilment, "stock"), or(ilike(products.name, like), ilike(products.sku, like), ilike(brands.name, like))))
     .orderBy(desc(products.soldCount))
     .limit(6);
   return rows.map(({ category, condition, specs, ...r }) => ({ ...r, image: productImage(r.image, { name: r.name, brand: r.brand, category, condition, specs }, true) }));

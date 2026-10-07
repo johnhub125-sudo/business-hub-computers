@@ -1,12 +1,12 @@
 import "server-only";
-import { and, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BRAND_DEFAULTS } from "@/lib/brand";
 import { nairaToKobo } from "@/lib/money";
 import { slugify } from "@/lib/utils";
 import { audit, diff } from "../audit";
 import { db, type Tx } from "../db";
-import { brands, categories, inventory, orderItems, productConditions, productImages, productVariants, productVideos, products } from "../db/schema";
+import { brands, categories, inventory, orderItems, productConditions, productImages, productVariants, productVideos, products, cartItems, wishlistItems } from "../db/schema";
 import { UserError } from "../errors";
 import type { StaffContext } from "../session";
 import { adjustStock } from "./inventory";
@@ -62,6 +62,9 @@ export const productSchema = z
     supplierId: z.string().uuid().optional().nullable(),
     weightGrams: z.coerce.number().int().min(0).max(1_000_000).optional().nullable(),
     dimensions: z.string().trim().max(100).optional().nullable(),
+    fulfilment: z.enum(["stock", "dropship"]).default("stock"),
+    dropshipPartner: z.string().trim().max(120).optional().nullable(),
+    dropshipLeadDays: z.coerce.number().int().min(0).max(120).optional().nullable(),
     status: z.enum(["draft", "active", "archived"]),
     isFeatured: z.boolean().default(false),
     isDeal: z.boolean().default(false),
@@ -78,6 +81,7 @@ export const productSchema = z
     imageOrder: z.array(z.object({ id: z.string().uuid(), alt: z.string().max(200).optional().nullable() })).default([]),
   })
   .superRefine((p, ctx) => {
+    if (p.fulfilment === "dropship" && !p.dropshipPartner) ctx.addIssue({ code: "custom", path: ["dropshipPartner"], message: "Enter the partner company that supplies this product" });
     if (p.discountPrice != null && p.price != null && p.discountPrice > p.price) ctx.addIssue({ code: "custom", path: ["discountPrice"], message: "Discount price must be below the price" });
     const skus = p.variants.map((v) => v.sku.toUpperCase());
     if (new Set(skus).size !== skus.length) ctx.addIssue({ code: "custom", path: ["variants"], message: "Variant SKUs must be unique" });
@@ -127,6 +131,9 @@ export async function saveProduct(raw: unknown, staff: Pick<StaffContext, "id" |
       supplierId: input.supplierId || null,
       weightGrams: input.weightGrams ?? null,
       dimensions: input.dimensions || null,
+      fulfilment: input.fulfilment,
+      dropshipPartner: input.fulfilment === "dropship" ? input.dropshipPartner || null : null,
+      dropshipLeadDays: input.fulfilment === "dropship" ? (input.dropshipLeadDays ?? null) : null,
       status: input.status,
       isFeatured: input.isFeatured,
       isDeal: input.isDeal,
@@ -156,6 +163,7 @@ export async function saveProduct(raw: unknown, staff: Pick<StaffContext, "id" |
       const [created] = await tx.insert(products).values({ ...values, createdBy: staff.id }).returning({ id: products.id });
       productId = created.id;
       await audit({ actor: staff, action: "product.created", module: "Products", description: `Created product ${values.name}`, entityType: "product", entityId: productId, after: { sku: values.sku, price: values.price, status: values.status } }, tx);
+      await removeDemoProducts(tx, staff);
     }
 
     // ── Variants ─────────────────────────────────────────────
@@ -209,6 +217,33 @@ export async function saveProduct(raw: unknown, staff: Pick<StaffContext, "id" |
   });
 }
 
+/* ───────────── placeholder catalogue ───────────── */
+
+/**
+ * The demo products that ship with a new store are placeholders. As soon as staff add a real product
+ * (form or import) the untouched placeholders are removed: taken out of the shop, carts and
+ * wishlists, with their stock zeroed in the ledger. A placeholder that staff have edited is treated as
+ * adopted and is kept. They are soft-deleted, so order history and reports stay intact.
+ */
+export async function removeDemoProducts(tx: Tx, staff: Pick<StaffContext, "id" | "email" | "roleLabel">): Promise<number> {
+  const demo = await tx
+    .select({ id: products.id })
+    .from(products)
+    .where(and(isNull(products.createdBy), isNull(products.deletedAt), sql`${products.updatedAt} = ${products.createdAt}`));
+  if (!demo.length) return 0;
+  const ids = demo.map((d) => d.id);
+  const variants = await tx.select({ id: productVariants.id, onHand: inventory.onHand, reserved: inventory.reserved }).from(productVariants).leftJoin(inventory, eq(inventory.variantId, productVariants.id)).where(inArray(productVariants.productId, ids));
+  for (const v of variants) {
+    const spare = (v.onHand ?? 0) - (v.reserved ?? 0);
+    if (spare > 0) await adjustStock(tx, { variantId: v.id, delta: -spare, type: "correction", referenceType: "product", referenceId: "demo-cleanup", userId: staff.id, note: "Placeholder product removed" });
+  }
+  if (variants.length) await tx.delete(cartItems).where(inArray(cartItems.variantId, variants.map((v) => v.id)));
+  await tx.delete(wishlistItems).where(inArray(wishlistItems.productId, ids));
+  await tx.update(products).set({ deletedAt: new Date(), status: "archived", isFeatured: false, isDeal: false, updatedAt: new Date() }).where(inArray(products.id, ids));
+  await audit({ actor: staff, action: "product.demo_removed", module: "Products", description: `Removed ${ids.length} placeholder product(s) now that real products exist` }, tx);
+  return ids.length;
+}
+
 /* ───────────── bulk operations (spec §80) ───────────── */
 
 export async function bulkUpdate(ids: string[], op: { kind: "status"; status: "draft" | "active" | "archived" } | { kind: "category"; categoryId: string } | { kind: "price"; percent: number } | { kind: "flag"; flag: "isFeatured" | "isDeal" | "isNewArrival"; value: boolean } | { kind: "delete" }, staff: Pick<StaffContext, "id" | "email" | "roleLabel">) {
@@ -251,10 +286,10 @@ export async function bulkUpdate(ids: string[], op: { kind: "status"; status: "d
 
 /* ───────────── Excel / CSV import (validated before any write) ───────────── */
 
-export const IMPORT_COLUMNS = ["sku", "name", "category", "subcategory", "brand", "condition", "price", "discount_price", "purchase_price", "stock", "short_description", "description", "specifications", "warranty", "featured", "deal", "new_arrival", "best_seller", "status"] as const;
+export const IMPORT_COLUMNS = ["sku", "name", "category", "subcategory", "brand", "condition", "price", "discount_price", "purchase_price", "stock", "short_description", "description", "specifications", "warranty", "featured", "deal", "new_arrival", "best_seller", "status", "dropship_partner", "dropship_days"] as const;
 
 /** Friendly column names for error messages. */
-const IMPORT_LABELS: Record<string, string> = { sku: "SKU", name: "Product name", category: "Category", subcategory: "Subcategory", brand: "Brand", condition: "Condition", price: "Price", discount_price: "Discount price", purchase_price: "Cost price", stock: "Stock quantity", short_description: "Short description", description: "Full description", specifications: "Specifications", warranty: "Warranty", featured: "Featured", deal: "Deal", new_arrival: "New arrival", best_seller: "Best seller", status: "Status" };
+const IMPORT_LABELS: Record<string, string> = { sku: "SKU", name: "Product name", category: "Category", subcategory: "Subcategory", brand: "Brand", condition: "Condition", price: "Price", discount_price: "Discount price", purchase_price: "Cost price", stock: "Stock quantity", dropship_partner: "Dropship partner", dropship_days: "Dropship delivery days", short_description: "Short description", description: "Full description", specifications: "Specifications", warranty: "Warranty", featured: "Featured", deal: "Deal", new_arrival: "New arrival", best_seller: "Best seller", status: "Status" };
 
 /** "Yes"/"No" cells. Blank stays undefined so an update never switches a flag off by accident. */
 const yesNo = z
@@ -293,7 +328,11 @@ const importRow = z.object({
   price: naira.refine((v) => v != null && v > 0, "price required"),
   discount_price: naira.nullable().optional(),
   purchase_price: naira.nullable().optional(),
-  stock: z.coerce.number().int().min(0).max(100000).optional().default(0),
+  // Blank = leave stock alone (new products start at 0). A number sets the stock to exactly that.
+  stock: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number().int().min(0).max(100000).optional()),
+  // Dropshipping: a partner name makes it a dropship product (supplied and shipped by that company).
+  dropship_partner: z.string().trim().max(120).optional().default(""),
+  dropship_days: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number().int().min(0).max(120).optional()),
   short_description: z.string().trim().max(500).optional().default(""),
   description: z.string().trim().max(20000).optional().default(""),
   specifications: z.string().trim().max(4000).optional().default(""),
@@ -375,6 +414,9 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
 
   let created = 0;
   let updated = 0;
+  let stockSet = 0;
+  let demoRemoved = 0;
+  notes.length = 0;
   await db.transaction(async (tx) => {
     const brandIds = new Map(brs.map((b) => [b.slug, b.id]));
     for (const [slug, name] of newBrands) {
@@ -413,6 +455,7 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
         description: p.description || null,
         warranty: p.warranty || null,
         status: p.status,
+        ...(p.dropship_partner ? { fulfilment: "dropship", dropshipPartner: p.dropship_partner, dropshipLeadDays: p.dropship_days ?? null } : {}),
         updatedAt: new Date(),
       };
       if (existing) {
@@ -422,6 +465,23 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
           .update(products)
           .set({ ...base, ...keep, ...(Object.keys(p.specs).length ? { specifications: p.specs } : {}) })
           .where(eq(products.id, existing.id));
+        // Keep stock in step with the sheet: a number in "Stock quantity" becomes the new stock on hand.
+        if (p.stock !== undefined && existing.id) {
+          const variants = await tx.select({ id: productVariants.id, onHand: inventory.onHand }).from(productVariants).leftJoin(inventory, eq(inventory.variantId, productVariants.id)).where(and(eq(productVariants.productId, existing.id), eq(productVariants.isActive, true)));
+          if (variants.length === 1) {
+            const delta = p.stock - (variants[0].onHand ?? 0);
+            if (delta !== 0) {
+              try {
+                await tx.transaction((sp) => adjustStock(sp, { variantId: variants[0].id, delta, type: "correction", referenceType: "import", referenceId: existing.id, userId: staff.id, note: "Stock set by product import" }));
+                stockSet++;
+              } catch {
+                notes.push(`${p.name}: stock was not changed because ${p.stock} is below the units already reserved for orders.`);
+              }
+            }
+          } else if (variants.length > 1) {
+            notes.push(`${p.name}: has several variants, so its stock was not changed. Set stock per variant under Inventory.`);
+          }
+        }
         updated++;
       } else {
         const [np] = await tx
@@ -440,11 +500,15 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
           .returning({ id: products.id });
         const [v] = await tx.insert(productVariants).values({ productId: np.id, sku: `${sku}-STD`, isDefault: true }).returning({ id: productVariants.id });
         await tx.insert(inventory).values({ variantId: v.id });
-        if (p.stock > 0) await adjustStock(tx, { variantId: v.id, delta: p.stock, type: "purchase", referenceType: "import", referenceId: np.id, userId: staff.id, note: "Import opening stock" });
+        if (p.stock && p.stock > 0) await adjustStock(tx, { variantId: v.id, delta: p.stock, type: "purchase", referenceType: "import", referenceId: np.id, userId: staff.id, note: "Import opening stock" });
         created++;
       }
     }
-    await audit({ actor: staff, action: "product.imported", module: "Products", description: `Product import: ${created} created, ${updated} updated${newBrands.size ? `, ${newBrands.size} brand(s) added` : ""}` }, tx);
+    // The first real products replace the placeholder catalogue.
+    if (created > 0) demoRemoved = await removeDemoProducts(tx, staff);
+    await audit({ actor: staff, action: "product.imported", module: "Products", description: `Product import: ${created} created, ${updated} updated${stockSet ? `, stock set on ${stockSet}` : ""}${newBrands.size ? `, ${newBrands.size} brand(s) added` : ""}` }, tx);
   });
-  return { ok: true, errors: [], notes: [], count: parsed.length, created, updated };
+  if (stockSet) notes.unshift(`Stock updated on ${stockSet} existing product(s).`);
+  if (demoRemoved) notes.unshift(`${demoRemoved} placeholder product(s) were removed — the shop now shows only your own products.`);
+  return { ok: true, errors: [], notes, count: parsed.length, created, updated };
 }

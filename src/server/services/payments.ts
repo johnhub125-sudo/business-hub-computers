@@ -12,6 +12,7 @@ import {
   initializeTransaction,
   paystackConfig,
   paystackKeys,
+  paystackWebhookSecrets,
   verifyTransaction,
   verifyWebhookSignature,
   type PaystackMode,
@@ -135,7 +136,7 @@ export async function finalizePaystackPayment(reference: string, source: "callba
   if (payment.status === "successful") return { status: "successful", orderId: payment.orderId, alreadyProcessed: true };
 
   const mode: PaystackMode = payment.mode === "live" ? "live" : "test";
-  const { secret } = paystackKeys(mode);
+  const { secret } = await paystackKeys(mode);
   if (!secret) throw new Error(`Paystack ${mode} secret key missing; cannot verify ${reference}`);
 
   const tx = await verifyTransaction(secret, reference); // network call happens OUTSIDE the DB transaction
@@ -206,7 +207,7 @@ export async function finalizePaystackPayment(reference: string, source: "callba
 export async function handlePaystackWebhook(rawBody: string, signature: string | null) {
   const cfg = await paystackConfig();
   // Accept a signature from either key pair so events for test-mode payments still verify after a switch.
-  const secrets = (["live", "test"] as const).map((m) => paystackKeys(m).secret).filter(Boolean) as string[];
+  const secrets = await paystackWebhookSecrets();
   if (!secrets.length) return { httpStatus: 503, body: "not configured" };
   const valid = secrets.some((s) => verifyWebhookSignature(rawBody, signature, s));
   if (!valid) {
@@ -454,7 +455,7 @@ export async function processRefund(refundId: string, staff: StaffActor, decisio
   let providerRefundId: string | null = null;
   try {
     if (p.method === "paystack") {
-      const { secret } = paystackKeys(p.mode === "live" ? "live" : "test");
+      const { secret } = await paystackKeys(p.mode === "live" ? "live" : "test");
       if (!secret || !p.providerTransactionId) throw new Error("Paystack refund unavailable for this payment");
       const res = await createRefund(secret, { transaction: p.providerTransactionId, amountKobo: r.amount, reason: r.reason });
       providerRefundId = String(res.id);

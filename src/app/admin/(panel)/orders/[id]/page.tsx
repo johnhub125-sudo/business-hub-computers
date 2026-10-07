@@ -11,7 +11,7 @@ import { formatMoney } from "@/lib/money";
 import { DELIVERY_STATUS, ORDER_STATUS, ORDER_TRANSITIONS, PAYMENT_METHOD, PAYMENT_STATUS, REFUND_STATUS } from "@/lib/status";
 import { formatDateTime } from "@/lib/utils";
 import { db } from "@/server/db";
-import { auditLogs, deliveries, inventoryTransactions, orderEvents, orderItems, orders, outboxMessages, paymentEvents, payments, receipts, refunds, staffProfiles, user } from "@/server/db/schema";
+import { auditLogs, deliveries, inventoryTransactions, orderEvents, orderItems, orders, outboxMessages, paymentEvents, payments, products, receipts, refunds, staffProfiles, user } from "@/server/db/schema";
 import { can, requireStaffPage } from "@/server/session";
 
 export const metadata: Metadata = { title: "Order" };
@@ -23,7 +23,13 @@ export default async function AdminOrderPage({ params }: PageProps<"/admin/order
   const [order] = await db.select().from(orders).where(eq(orders.id, id));
   if (!order) notFound();
   const [items, events, pays, [receipt], [delivery], refundRows, invTx, audits, outbox, staffList] = await Promise.all([
-    db.select().from(orderItems).where(eq(orderItems.orderId, id)),
+    // Each line with its product's supply details, so staff can see what must be ordered from a partner.
+    db
+      .select({ item: orderItems, fulfilment: products.fulfilment, partner: products.dropshipPartner })
+      .from(orderItems)
+      .leftJoin(products, eq(products.id, orderItems.productId))
+      .where(eq(orderItems.orderId, id))
+      .then((rows) => rows.map((r) => ({ ...r.item, dropshipPartner: r.fulfilment === "dropship" ? (r.partner ?? "partner") : null }))),
     db.select({ e: orderEvents, actor: user.name }).from(orderEvents).leftJoin(user, eq(user.id, orderEvents.actorId)).where(eq(orderEvents.orderId, id)).orderBy(asc(orderEvents.createdAt)),
     db.select().from(payments).where(eq(payments.orderId, id)).orderBy(desc(payments.createdAt)),
     db.select().from(receipts).where(eq(receipts.orderId, id)),
@@ -87,6 +93,9 @@ export default async function AdminOrderPage({ params }: PageProps<"/admin/order
                         {i.variantName ? `${i.variantName} · ` : ""}SKU {i.sku}
                         {i.warranty ? ` · ${i.warranty}` : ""}
                       </span>
+                      {i.dropshipPartner && (
+                        <span className="mt-1 inline-block rounded-md bg-slate-800 px-2 py-0.5 text-[11px] font-bold text-white">Dropship — order from {i.dropshipPartner}</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-right text-muted">
                       {i.quantity} × {formatMoney(i.unitPrice)}

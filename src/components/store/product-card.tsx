@@ -79,6 +79,7 @@ export function ProductCard({ p, wished = false, priority = false }: { p: Produc
         <span className={cn("rounded-md px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide", p.conditionSlug === "brand-new" ? "bg-brand-700 text-white" : "bg-accent-500 text-white")}>{p.condition}</span>
         {p.isNewArrival && <span className="rounded-md bg-emerald-600 px-2 py-0.5 text-[10.5px] font-bold uppercase text-white">New</span>}
         {p.isBestSeller && <span className="rounded-md bg-amber-500 px-2 py-0.5 text-[10.5px] font-bold uppercase text-white">Best seller</span>}
+        {p.fulfilment === "dropship" && <span className="rounded-md bg-slate-800 px-2 py-0.5 text-[10.5px] font-bold uppercase text-white">Dropship{p.dropshipLeadDays ? ` · ${p.dropshipLeadDays}d` : ""}</span>}
       </div>
       <div className="absolute right-2.5 top-2.5 z-10 flex flex-col gap-1.5">
         <button type="button" onClick={wish} disabled={pending} aria-pressed={isWished} aria-label={isWished ? "Remove from wishlist" : "Add to wishlist"} className="grid size-8 place-items-center rounded-full bg-white/95 shadow-sm ring-1 ring-line hover:text-accent-500">

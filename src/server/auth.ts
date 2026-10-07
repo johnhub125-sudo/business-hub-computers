@@ -4,6 +4,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
+import { passkey } from "@better-auth/passkey";
 import { twoFactor } from "better-auth/plugins";
 import { eq, sql } from "drizzle-orm";
 import { resolveSiteUrl } from "@/lib/site-url";
@@ -42,6 +43,30 @@ function assertStrongPassword(pw: unknown) {
 }
 
 const security = SETTINGS_DEFAULTS.security;
+const siteOrigin = resolveSiteUrl(process.env.BETTER_AUTH_URL, process.env.NEXT_PUBLIC_APP_URL);
+
+/**
+ * Rejects passwords that appear in known data breaches (Have I Been Pwned, k-anonymity: only the
+ * first 5 characters of the password's SHA-1 hash ever leave the server). If the service cannot be
+ * reached the check is skipped, so sign-up never breaks because of it.
+ */
+async function assertNotBreached(pw: unknown) {
+  if (typeof pw !== "string" || pw.length < 8) return;
+  const hash = createHash("sha1").update(pw).digest("hex").toUpperCase();
+  let body: string;
+  try {
+    const res = await fetch(`https://api.pwnedpasswords.com/range/${hash.slice(0, 5)}`, { headers: { "Add-Padding": "true" }, signal: AbortSignal.timeout(2500), cache: "no-store" });
+    if (!res.ok) return;
+    body = await res.text();
+  } catch {
+    return;
+  }
+  const suffix = hash.slice(5);
+  const hit = body.split("\n").find((line) => line.startsWith(suffix));
+  if (hit && Number(hit.split(":")[1]) > 0) {
+    throw new APIError("BAD_REQUEST", { message: "This password has appeared in a data breach elsewhere, so it is not safe. Please choose a different one." });
+  }
+}
 
 export const auth = betterAuth({
   appName: "Business Hub Computers",
@@ -138,9 +163,11 @@ export const auth = betterAuth({
         // Registration must go through /register (which validates all fields and creates the profile).
         if (!isInternal(ctx.headers)) throw new APIError("FORBIDDEN", { message: "Please register using the registration form." });
         assertStrongPassword(ctx.body?.password);
+        await assertNotBreached(ctx.body?.password);
       }
       if (ctx.path === "/reset-password" || ctx.path === "/change-password") {
         assertStrongPassword(ctx.body?.newPassword);
+        await assertNotBreached(ctx.body?.newPassword);
       }
       if (ctx.path === "/sign-in/email") {
         const email = String(ctx.body?.email ?? "").toLowerCase();
@@ -194,7 +221,13 @@ export const auth = betterAuth({
     }),
   },
 
-  plugins: [twoFactor({ issuer: "Business Hub Computers" }), nextCookies()],
+  plugins: [
+    twoFactor({ issuer: "Business Hub Computers" }),
+    // Quick sign-in with the device's fingerprint / face / screen lock. Opt-in per user and per device;
+    // the browser offers the accounts saved on that device and the user picks one.
+    passkey({ rpName: "Business Hub Computers", rpID: new URL(siteOrigin).hostname, origin: siteOrigin }),
+    nextCookies(),
+  ],
 });
 
 export type AuthSession = typeof auth.$Infer.Session;

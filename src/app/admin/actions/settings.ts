@@ -77,8 +77,8 @@ export async function saveSettingsAction(key: string, values: unknown, confirmat
       if (p.paystackMode === "live" && before.paystackMode !== "live") {
         if (!staff.isSuperAdmin) throw new UserError("Only the Super Admin can switch Paystack to LIVE mode.");
         if (confirmation !== "GO LIVE") throw new UserError('Type "GO LIVE" to confirm switching to real payments.');
-        const { secret, publicKey } = paystackKeys("live");
-        if (!secret || !publicKey) throw new UserError("Live Paystack keys are not configured in the environment (PAYSTACK_LIVE_SECRET_KEY / PAYSTACK_LIVE_PUBLIC_KEY).");
+        const { secret, publicKey } = await paystackKeys("live");
+        if (!secret || !publicKey) throw new UserError("Enter your Live Paystack keys first (Paystack keys, just below).");
         if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") throw new UserError("LIVE mode can only be enabled on the production deployment.");
       }
       if (!p.paystackEnabled && !p.bankTransferEnabled) throw new UserError("At least one payment method must stay enabled.");

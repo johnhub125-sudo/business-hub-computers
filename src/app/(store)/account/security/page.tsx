@@ -1,7 +1,7 @@
 import { Download } from "lucide-react";
 import type { Metadata } from "next";
 import { DeletionRequestForm } from "@/components/account/forms";
-import { ChangePasswordCard, SessionsCard, TwoFactorCard } from "@/components/account/security-panel";
+import { ChangePasswordCard, PasskeyCard, SessionsCard, TwoFactorCard } from "@/components/account/security-panel";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/misc";
 import { getSession, requireUserPage } from "@/server/session";
@@ -16,6 +16,7 @@ export default async function SecurityPage() {
       <h1 className="font-display text-2xl font-extrabold">Security & privacy</h1>
       <ChangePasswordCard forced={me.mustChangePassword} />
       <TwoFactorCard enabled={me.twoFactorEnabled} />
+      <PasskeyCard />
       <SessionsCard currentToken={session?.session.token} />
       <Card className="p-5">
         <h2 className="font-bold">Your data</h2>

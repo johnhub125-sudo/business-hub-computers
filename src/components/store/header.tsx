@@ -135,6 +135,9 @@ export async function SiteHeader() {
           <Link href="/projects" className="inline-flex h-12 items-center rounded-lg px-3 hover:text-brand-600">
             Projects
           </Link>
+          <Link href="/dropshipping" className="inline-flex h-12 items-center rounded-lg px-3 hover:text-brand-600">
+            Dropshipping
+          </Link>
           <Link href="/support" className="ml-auto inline-flex h-12 items-center rounded-lg px-3 hover:text-brand-600">
             Help & support
           </Link>

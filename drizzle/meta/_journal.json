@@ -15,6 +15,13 @@
       "when": 1791284836130,
       "tag": "0001_product_photo_search",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791400201973,
+      "tag": "0002_vault_passkeys_dropship",
+      "breakpoints": true
     }
   ]
 }

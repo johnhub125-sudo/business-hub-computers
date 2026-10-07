@@ -213,3 +213,20 @@ export const appRateLimits = pgTable("app_rate_limits", {
   count: integer().notNull(),
   windowStart: ts().notNull(),
 });
+
+/* ------------------------------------------------------------------ */
+/* Secrets vault                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Credentials entered in the admin (e.g. Paystack keys). Values are encrypted with AES-256-GCM using a
+ * key derived from BETTER_AUTH_SECRET, so a database leak alone does not reveal them. Only a masked
+ * hint is ever shown again. See src/server/secrets.ts.
+ */
+export const appSecrets = pgTable("app_secrets", {
+  key: text().primaryKey(),
+  ciphertext: text().notNull(),
+  hint: text().notNull(),
+  updatedBy: text().references(() => user.id, { onDelete: "set null" }),
+  updatedAt: ts().notNull().defaultNow(),
+});

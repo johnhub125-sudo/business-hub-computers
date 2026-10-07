@@ -2,7 +2,7 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { BadgeCheck, MessageCircleQuestion, RotateCcw, ShieldCheck, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { after } from "next/server";
 import { breadcrumbLd, JsonLd, siteUrl } from "@/components/json-ld";
 import { ProductRail } from "@/components/store/product-card";
@@ -44,6 +44,8 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
     ? data.images
     : [{ id: "art", url: productArtUrl({ name: p.name, brand: brand?.name, category: category.name, subcategory: subcategory?.name, condition: condition.name, specs: p.specifications }), alt: p.name }];
   const me = await getCurrentUser();
+  const dropship = p.fulfilment === "dropship";
+  if (dropship && !me) redirect(`/login?next=${encodeURIComponent(`/products/${p.slug}`)}`);
   const [reviews, related, fbt, wished, settings, questions, bought] = await Promise.all([
     productReviews(p.id),
     relatedProducts(p.id, p.categoryId),
@@ -124,6 +126,15 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
             {p.soldCount > 0 && <span>{p.soldCount} sold</span>}
           </div>
           {p.shortDescription && <p className="mt-4 text-[15px] leading-relaxed text-muted">{p.shortDescription}</p>}
+          {dropship && (
+            <p className="mt-4 flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 p-3 text-sm text-brand-900">
+              <Truck className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <span>
+                <strong>Dropship item.</strong> Supplied and shipped by our partner after your payment is confirmed
+                {p.dropshipLeadDays ? ` — usually delivered within ${p.dropshipLeadDays} day${p.dropshipLeadDays === 1 ? "" : "s"}` : ""}. Receipt, warranty and support are from us.
+              </span>
+            </p>
+          )}
           <div className="mt-6">
             <ProductPurchase
               productId={p.id}

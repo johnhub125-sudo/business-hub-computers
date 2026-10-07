@@ -1,6 +1,6 @@
 "use client";
 
-import { Laptop, ShieldCheck, Smartphone } from "lucide-react";
+import { Fingerprint, Laptop, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
 import Image from "next/image";
 import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
@@ -248,6 +248,91 @@ export function SessionsCard({ currentToken }: { currentToken?: string }) {
           );
         })}
       </ul>
+    </Card>
+  );
+}
+
+type SavedPasskey = { id: string; name?: string | null; deviceType?: string | null; createdAt?: string | Date | null };
+
+/**
+ * Quick sign-in (passkeys): the customer switches it on for each device they want. After that the
+ * device's fingerprint, face or screen lock signs them in, and the browser lets them pick which
+ * saved account to use. Nothing is enabled unless they choose it here.
+ */
+export function PasskeyCard() {
+  const [items, setItems] = useState<SavedPasskey[] | null>(null);
+  const [supported, setSupported] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    const res = await authClient.passkey.listUserPasskeys().catch(() => null);
+    setItems((res?.data as SavedPasskey[] | undefined) ?? []);
+  }
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSupported(typeof window !== "undefined" && Boolean(window.PublicKeyCredential));
+      void load();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  async function add() {
+    setBusy(true);
+    const ua = navigator.userAgent;
+    const device = /iPhone|iPad/.test(ua) ? "iPhone / iPad" : /Android/.test(ua) ? "Android phone" : /Windows/.test(ua) ? "Windows computer" : /Mac/.test(ua) ? "Mac" : "This device";
+    const res = await authClient.passkey.addPasskey({ name: device }).catch(() => ({ error: { message: "cancelled" } }));
+    setBusy(false);
+    if (res?.error) {
+      if (!/cancel|abort|not allowed|timed out/i.test(res.error.message ?? "")) toast.error("Quick sign-in could not be switched on for this device.");
+      return;
+    }
+    toast.success("Quick sign-in is on for this device");
+    void load();
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Switch off quick sign-in for this device? You can still sign in with your password.")) return;
+    const res = await authClient.passkey.deletePasskey({ id }).catch(() => ({ error: { message: "failed" } }));
+    if (res?.error) return void toast.error("Could not remove it. Please try again.");
+    toast.success("Removed");
+    void load();
+  }
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
+          <Fingerprint className="size-5" aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <h2 className="font-bold">Quick sign-in on your devices</h2>
+          <p className="mt-0.5 text-sm text-muted">Sign in with your fingerprint, face or screen lock instead of typing your password. It is safer than a password because it only works on the real site and on your own device.</p>
+        </div>
+      </div>
+      {!supported ? (
+        <p className="mt-4 rounded-xl bg-surface p-3 text-sm text-muted">This browser does not support quick sign-in. Try a recent version of Chrome, Edge or Safari.</p>
+      ) : (
+        <>
+          <ul className="mt-4 space-y-2">
+            {(items ?? []).map((k) => (
+              <li key={k.id} className="flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2 text-sm">
+                <span>
+                  <strong>{k.name || "Saved device"}</strong>
+                  {k.createdAt && <span className="block text-xs text-muted">Switched on {formatDateTime(new Date(k.createdAt))}</span>}
+                </span>
+                <button type="button" onClick={() => remove(k.id)} className="rounded p-1.5 text-red-600 hover:bg-red-50" aria-label="Switch off quick sign-in for this device">
+                  <Trash2 className="size-4" />
+                </button>
+              </li>
+            ))}
+            {items && items.length === 0 && <li className="rounded-xl bg-surface p-3 text-sm text-muted">Not switched on for any device yet.</li>}
+          </ul>
+          <Button type="button" className="mt-4" loading={busy} onClick={add}>
+            <Fingerprint className="size-4" aria-hidden /> Switch on for this device
+          </Button>
+        </>
+      )}
     </Card>
   );
 }

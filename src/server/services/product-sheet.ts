@@ -20,7 +20,7 @@ export const SHEET_COLUMNS: Column[] = [
   { key: "price", header: "Price (₦)", width: 14, required: true, help: "Selling price in naira, numbers only (e.g. 450000)." },
   { key: "discount_price", header: "Discount price (₦)", width: 18, help: "Optional. Lower than the price. Shows the old price crossed out." },
   { key: "purchase_price", header: "Cost price (₦)", width: 16, help: "Optional. What you paid. Never shown to customers." },
-  { key: "stock", header: "Stock quantity", width: 15, help: "How many you have. Used only when the product is new." },
+  { key: "stock", header: "Stock quantity", width: 15, help: "How many you have now. For an existing product this replaces its stock; leave blank to keep it unchanged." },
   { key: "short_description", header: "Short description", width: 44, help: "One or two sentences shown near the price." },
   { key: "description", header: "Full description", width: 54, help: "Optional longer description." },
   { key: "specifications", header: "Specifications", width: 54, help: "Format — Name: value; Name: value. Example — Processor: Core i5; RAM: 8GB; Storage: 256GB SSD. The first three appear on the product picture." },
@@ -30,6 +30,8 @@ export const SHEET_COLUMNS: Column[] = [
   { key: "new_arrival", header: "New arrival", width: 13, list: "yesno", help: "Yes shows it under New arrivals." },
   { key: "best_seller", header: "Best seller", width: 13, list: "yesno", help: "Yes shows it under Best sellers." },
   { key: "status", header: "Status", width: 11, list: "status", help: "Active = visible in the shop straight away (default). Draft = saved but hidden." },
+  { key: "dropship_partner", header: "Dropship partner", width: 24, help: "Only for goods supplied and shipped by another company: type that company’s name. Leave blank for goods from your own stock." },
+  { key: "dropship_days", header: "Dropship delivery days", width: 22, help: "For dropship goods: usual number of days to deliver, e.g. 7." },
 ];
 
 const MAX_ROWS = 1000;
@@ -134,7 +136,7 @@ export async function buildProductTemplate(): Promise<Buffer> {
     ["Where products appear", "Category and Subcategory decide the shop menu. Condition puts the product under Brand New or UK Used. Featured, Deal, New arrival and Best seller add it to those sections. Status “Active” shows it immediately."],
     ["Pictures", "Every product gets an automatic 3D picture straight away. The site then looks for a real photo on the manufacturer’s website in the background and swaps it in. You can replace or remove any picture on the product’s edit page."],
     ["Product codes", "You do not enter a SKU or web address — both are created automatically for every new product."],
-    ["Updating products", "A row with the same product name and condition as an existing product updates its details and price. Stock is only set for new products; change stock for existing ones under Inventory."],
+    ["Updating products", "A row with the same product name and condition as an existing product updates its details and price. A number in Stock quantity replaces the product’s stock; leave it blank to keep the current stock."],
     ["Limit", `Up to ${MAX_ROWS.toLocaleString()} products per file.`],
     ["", ""],
     ["Column guide", ""],

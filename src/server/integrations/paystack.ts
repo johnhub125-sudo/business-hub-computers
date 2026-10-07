@@ -1,6 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { log } from "../logger";
+import { getSecret } from "../secrets";
 import { getSetting } from "../settings";
 
 /**
@@ -14,21 +15,38 @@ export type PaystackMode = "test" | "live";
 
 export class PaystackNotConfiguredError extends Error {
   constructor(mode: PaystackMode) {
-    super(`Paystack ${mode} keys are not configured. Set PAYSTACK_${mode.toUpperCase()}_SECRET_KEY and PAYSTACK_${mode.toUpperCase()}_PUBLIC_KEY.`);
+    super(`Paystack ${mode} keys are not configured. Enter them in Admin → Settings → Payments.`);
   }
 }
 
-export function paystackKeys(mode: PaystackMode) {
+function envKeys(mode: PaystackMode) {
   const secret = mode === "live" ? process.env.PAYSTACK_LIVE_SECRET_KEY : process.env.PAYSTACK_TEST_SECRET_KEY;
   const publicKey = mode === "live" ? process.env.PAYSTACK_LIVE_PUBLIC_KEY : process.env.PAYSTACK_TEST_PUBLIC_KEY;
-  return { secret, publicKey };
+  return { secret: secret || undefined, publicKey: publicKey || undefined };
+}
+
+/**
+ * Keys for a mode. Keys entered in Admin → Settings → Payments (stored encrypted, see secrets.ts)
+ * take priority; environment variables are the fallback.
+ */
+export async function paystackKeys(mode: PaystackMode): Promise<{ secret: string | undefined; publicKey: string | undefined; source: "admin" | "environment" | null }> {
+  const [secret, publicKey] = await Promise.all([getSecret(`paystack.${mode}.secret`), getSecret(`paystack.${mode}.public`)]);
+  if (secret && publicKey) return { secret, publicKey, source: "admin" };
+  const env = envKeys(mode);
+  return { ...env, source: env.secret && env.publicKey ? "environment" : null };
+}
+
+/** Every secret key that could have signed a webhook (both modes, admin-entered and environment). */
+export async function paystackWebhookSecrets(): Promise<string[]> {
+  const stored = await Promise.all((["live", "test"] as const).map((m) => getSecret(`paystack.${m}.secret`)));
+  return [...new Set([...stored, envKeys("live").secret, envKeys("test").secret].filter((s): s is string => Boolean(s)))];
 }
 
 /** Current mode from settings. Live mode also requires live keys to exist (fail closed). */
 export async function paystackConfig() {
   const payments = await getSetting("payments");
   const mode: PaystackMode = payments.paystackMode === "live" ? "live" : "test";
-  const { secret, publicKey } = paystackKeys(mode);
+  const { secret, publicKey } = await paystackKeys(mode);
   return { mode, enabled: payments.paystackEnabled, configured: Boolean(secret && publicKey), secret, publicKey, channels: payments.channels };
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Heart, Headset, LayoutDashboard, LogOut, MapPin, Package, Shield, Star, User } from "lucide-react";
+import { Bell, Heart, Headset, LayoutDashboard, LogOut, MapPin, Package, Shield, Star, Truck, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const ITEMS = [
   { href: "/account", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/account/orders", label: "Orders & tracking", icon: Package },
+  { href: "/dropshipping", label: "Dropshipping goods", icon: Truck },
   { href: "/account/profile", label: "Profile", icon: User },
   { href: "/account/addresses", label: "Addresses", icon: MapPin },
   { href: "/account/wishlist", label: "Wishlist", icon: Heart },
