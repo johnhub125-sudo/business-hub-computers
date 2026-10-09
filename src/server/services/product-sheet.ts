@@ -21,6 +21,7 @@ export const SHEET_COLUMNS: Column[] = [
   { key: "discount_price", header: "Discount price (₦)", width: 18, help: "Optional. Lower than the price. Shows the old price crossed out." },
   { key: "purchase_price", header: "Cost price (₦)", width: 16, help: "Optional. What you paid. Never shown to customers." },
   { key: "stock", header: "Stock quantity", width: 15, help: "How many you have now. For an existing product this replaces its stock; leave blank to keep it unchanged." },
+  { key: "serial_numbers", header: "Serial numbers", width: 44, help: "Optional. Type the serial number of every unit in this one cell, separated by commas, e.g. 5CG1234ABC, 5CG1234ABD, 5CG1234ABE. They are counted for you: 3 serial numbers = 3 in stock, so leave Stock quantity blank. For a product already in the shop, new serial numbers are added to its stock; ones already recorded are not counted again." },
   { key: "short_description", header: "Short description", width: 44, help: "One or two sentences shown near the price." },
   { key: "description", header: "Full description", width: 54, help: "Optional longer description." },
   { key: "specifications", header: "Specifications", width: 54, help: "Format — Name: value; Name: value. Example — Processor: Core i5; RAM: 8GB; Storage: 256GB SSD. The first three appear on the product picture." },
@@ -50,6 +51,7 @@ HEADER_KEYS.set("costprice", "purchase_price");
 HEADER_KEYS.set("stock", "stock");
 HEADER_KEYS.set("quantity", "stock");
 HEADER_KEYS.set("specs", "specifications");
+for (const h of ["serial", "serials", "serialnumber", "serialno", "serialnos", "sn", "imei"]) HEADER_KEYS.set(h, "serial_numbers");
 
 const colLetter = (n: number) => {
   let s = "";
@@ -118,6 +120,10 @@ export async function buildProductTemplate(): Promise<Buffer> {
         cell.numFmt = "#,##0";
       } else if (c.key === "stock") {
         cell.dataValidation = { type: "whole", operator: "greaterThanOrEqual", allowBlank: true, formulae: [0], showErrorMessage: true, errorTitle: c.header, error: "Enter a whole number, e.g. 5." };
+      } else if (c.key === "serial_numbers") {
+        // Text format, so Excel never turns a long numeric serial into 3.57E+14.
+        cell.numFmt = "@";
+        cell.alignment = { wrapText: true, vertical: "top" };
       }
     }
   });
@@ -137,12 +143,13 @@ export async function buildProductTemplate(): Promise<Buffer> {
     ["Pictures", "Every product gets an automatic 3D picture straight away. The site then looks for a real photo on the manufacturer’s website in the background and swaps it in. You can replace or remove any picture on the product’s edit page."],
     ["Product codes", "You do not enter a SKU or web address — both are created automatically for every new product."],
     ["Updating products", "A row with the same product name and condition as an existing product updates its details and price. A number in Stock quantity replaces the product’s stock; leave it blank to keep the current stock."],
+    ["Serial numbers", "Put all the serial numbers of a product in its Serial numbers cell, separated by commas. The count becomes the stock, so you do not fill Stock quantity. Uploading more serial numbers for the same product later adds them to its stock."],
     ["Limit", `Up to ${MAX_ROWS.toLocaleString()} products per file.`],
     ["", ""],
     ["Column guide", ""],
     ...SHEET_COLUMNS.map((c): [string, string] => [c.required ? `${c.header} *` : c.header, c.help]),
     ["", ""],
-    ["Example row", "Product name: HP EliteBook 840 G8 Core i7 · Category: Computers · Subcategory: Business Laptops · Brand: HP · Condition: UK Used · Price: 520000 · Stock quantity: 4 · Specifications: Processor: Core i7 11th Gen; RAM: 16GB; Storage: 512GB SSD · Featured: Yes"],
+    ["Example row", "Product name: HP EliteBook 840 G8 Core i7 · Category: Computers · Subcategory: Business Laptops · Brand: HP · Condition: UK Used · Price: 520000 · Serial numbers: 5CG1234ABC, 5CG1234ABD, 5CG1234ABE, 5CG1234ABF (= 4 in stock) · Specifications: Processor: Core i7 11th Gen; RAM: 16GB; Storage: 512GB SSD · Featured: Yes"],
   ];
   lines.forEach(([a, b], i) => {
     const row = hs.getRow(i + 1);

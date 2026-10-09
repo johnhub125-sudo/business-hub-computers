@@ -6,7 +6,7 @@ import { nairaToKobo } from "@/lib/money";
 import { slugify } from "@/lib/utils";
 import { audit, diff } from "../audit";
 import { db, type Tx } from "../db";
-import { brands, categories, inventory, orderItems, productConditions, productImages, productVariants, productVideos, products, cartItems, wishlistItems } from "../db/schema";
+import { brands, categories, inventory, orderItems, productConditions, productImages, productVariants, productVideos, products, cartItems, wishlistItems, productSerials } from "../db/schema";
 import { UserError } from "../errors";
 import type { StaffContext } from "../session";
 import { adjustStock } from "./inventory";
@@ -286,10 +286,10 @@ export async function bulkUpdate(ids: string[], op: { kind: "status"; status: "d
 
 /* ───────────── Excel / CSV import (validated before any write) ───────────── */
 
-export const IMPORT_COLUMNS = ["sku", "name", "category", "subcategory", "brand", "condition", "price", "discount_price", "purchase_price", "stock", "short_description", "description", "specifications", "warranty", "featured", "deal", "new_arrival", "best_seller", "status", "dropship_partner", "dropship_days"] as const;
+export const IMPORT_COLUMNS = ["sku", "name", "category", "subcategory", "brand", "condition", "price", "discount_price", "purchase_price", "stock", "serial_numbers", "short_description", "description", "specifications", "warranty", "featured", "deal", "new_arrival", "best_seller", "status", "dropship_partner", "dropship_days"] as const;
 
 /** Friendly column names for error messages. */
-const IMPORT_LABELS: Record<string, string> = { sku: "SKU", name: "Product name", category: "Category", subcategory: "Subcategory", brand: "Brand", condition: "Condition", price: "Price", discount_price: "Discount price", purchase_price: "Cost price", stock: "Stock quantity", dropship_partner: "Dropship partner", dropship_days: "Dropship delivery days", short_description: "Short description", description: "Full description", specifications: "Specifications", warranty: "Warranty", featured: "Featured", deal: "Deal", new_arrival: "New arrival", best_seller: "Best seller", status: "Status" };
+const IMPORT_LABELS: Record<string, string> = { sku: "SKU", name: "Product name", category: "Category", subcategory: "Subcategory", brand: "Brand", condition: "Condition", price: "Price", discount_price: "Discount price", purchase_price: "Cost price", stock: "Stock quantity", serial_numbers: "Serial numbers", dropship_partner: "Dropship partner", dropship_days: "Dropship delivery days", short_description: "Short description", description: "Full description", specifications: "Specifications", warranty: "Warranty", featured: "Featured", deal: "Deal", new_arrival: "New arrival", best_seller: "Best seller", status: "Status" };
 
 /** "Yes"/"No" cells. Blank stays undefined so an update never switches a flag off by accident. */
 const yesNo = z
@@ -330,6 +330,8 @@ const importRow = z.object({
   purchase_price: naira.nullable().optional(),
   // Blank = leave stock alone (new products start at 0). A number sets the stock to exactly that.
   stock: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number().int().min(0).max(100000).optional()),
+  // One cell holding every unit's serial number, separated by commas. Their count is the quantity.
+  serial_numbers: z.string().max(40000).optional().default(""),
   // Dropshipping: a partner name makes it a dropship product (supplied and shipped by that company).
   dropship_partner: z.string().trim().max(120).optional().default(""),
   dropship_days: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number().int().min(0).max(120).optional()),
@@ -351,6 +353,14 @@ const importRow = z.object({
     .pipe(z.enum(["draft", "active", "archived"])),
 });
 
+/** "sn1, sn2 ,SN3" → ["SN1", "SN2", "SN3"]. Upper-cased so the same serial typed two ways is one unit. */
+export function parseSerials(text: string): string[] {
+  return text
+    .split(/[,;\n\r\t]+/)
+    .map((x) => x.trim().replace(/\s+/g, " ").toUpperCase())
+    .filter(Boolean);
+}
+
 /** "Power Station" → "POW" */
 const categoryCode = (name: string) => (name.replace(/[^A-Za-z]/g, "").slice(0, 3) || "GEN").toUpperCase();
 
@@ -362,7 +372,8 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
   const [cats, conds, brs] = await Promise.all([db.select().from(categories), db.select().from(productConditions), db.select().from(brands)]);
   const find = <T extends { name: string; slug: string }>(list: T[], v: string) => list.find((x) => x.slug === slugify(v) || x.name.toLowerCase() === v.toLowerCase());
   const errors: { row: number; message: string }[] = [];
-  const parsed: (z.infer<typeof importRow> & { categoryId: string; subcategoryId: string | null; conditionId: string; brandKey: string | null; specs: Record<string, string> })[] = [];
+  const parsed: (z.infer<typeof importRow> & { categoryId: string; subcategoryId: string | null; conditionId: string; brandKey: string | null; specs: Record<string, string>; serials: string[] })[] = [];
+  const serialRows = new Map<string, number>(); // serial → first row it appears on
   const newBrands = new Map<string, string>(); // slug → name as typed
   rows.forEach((r, i) => {
     const row = Number(r.__row) || i + 2;
@@ -392,6 +403,19 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
       fail("Discount price is above the price");
       ok = false;
     }
+    const serials = parseSerials(d.serial_numbers);
+    if (serials.length) {
+      const repeated = [...new Set(serials.filter((x, n) => serials.indexOf(x) !== n))];
+      const bad = serials.filter((x) => x.length > 64);
+      if (repeated.length) fail(`Serial numbers: ${repeated.slice(0, 5).join(", ")} appear${repeated.length === 1 ? "s" : ""} more than once in this cell`);
+      if (bad.length) fail(`Serial numbers: “${bad[0].slice(0, 30)}…” is too long — check that the serial numbers are separated by commas`);
+      if (serials.length > 5000) fail("Serial numbers: at most 5,000 in one cell");
+      if (d.stock !== undefined && d.stock !== serials.length) fail(`Stock quantity says ${d.stock} but there are ${serials.length} serial numbers — leave Stock quantity blank and the serial numbers are counted for you`);
+      const elsewhere = [...new Set(serials)].filter((x) => serialRows.has(x));
+      if (elsewhere.length) fail(`Serial number ${elsewhere[0]} is also on row ${serialRows.get(elsewhere[0])}`);
+      for (const x of serials) if (!serialRows.has(x)) serialRows.set(x, row);
+      if (repeated.length || bad.length || serials.length > 5000 || elsewhere.length || (d.stock !== undefined && d.stock !== serials.length)) ok = false;
+    }
     let brandKey: string | null = null;
     if (d.brand) {
       const existing = find(brs, d.brand);
@@ -401,7 +425,7 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
         ok = false;
       } else if (!existing && !newBrands.has(brandKey)) newBrands.set(brandKey, d.brand);
     }
-    if (ok && cat && cond) parsed.push({ ...d, categoryId: cat.id, subcategoryId, conditionId: cond.id, brandKey, specs: parseSpecifications(d.specifications) });
+    if (ok && cat && cond) parsed.push({ ...d, categoryId: cat.id, subcategoryId, conditionId: cond.id, brandKey, specs: parseSpecifications(d.specifications), serials });
   });
   const dupes = parsed.filter((p) => p.sku).map((p) => p.sku.toUpperCase()).filter((s, i, a) => a.indexOf(s) !== i);
   if (dupes.length) errors.push({ row: 0, message: `The same SKU appears more than once in the file: ${[...new Set(dupes)].join(", ")}` });
@@ -410,11 +434,14 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
   const sameName = parsed.filter((p) => !p.sku).map((p) => nameKey(p.name, p.conditionId)).filter((s, i, a) => a.indexOf(s) !== i);
   if (sameName.length) errors.push({ row: 0, message: `The same product (name and condition) appears more than once: ${[...new Set(sameName)].map((k) => k.split("|")[0]).join(", ")}` });
   const notes = newBrands.size ? [`${newBrands.size} new brand(s) will be created: ${[...newBrands.values()].join(", ")}`] : [];
+  const withSerials = parsed.filter((p) => p.serials.length);
+  if (withSerials.length) notes.push(`${withSerials.reduce((n, p) => n + p.serials.length, 0)} serial number(s) on ${withSerials.length} product(s) will be counted as stock.`);
   if (errors.length || dryRun) return { ok: errors.length === 0, errors, notes, count: parsed.length, created: 0, updated: 0 };
 
   let created = 0;
   let updated = 0;
   let stockSet = 0;
+  let serialsAdded = 0;
   let demoRemoved = 0;
   notes.length = 0;
   await db.transaction(async (tx) => {
@@ -466,7 +493,21 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
           .set({ ...base, ...keep, ...(Object.keys(p.specs).length ? { specifications: p.specs } : {}) })
           .where(eq(products.id, existing.id));
         // Keep stock in step with the sheet: a number in "Stock quantity" becomes the new stock on hand.
-        if (p.stock !== undefined && existing.id) {
+        if (p.serials.length && existing.id) {
+          // Serial numbers add units: each serial not yet recorded for this product is one more in stock.
+          const variants = await tx.select({ id: productVariants.id }).from(productVariants).where(and(eq(productVariants.productId, existing.id), eq(productVariants.isActive, true)));
+          if (variants.length === 1) {
+            const added = await tx.insert(productSerials).values(p.serials.map((serial) => ({ productId: existing.id, serial }))).onConflictDoNothing().returning({ id: productSerials.id });
+            if (added.length) {
+              await adjustStock(tx, { variantId: variants[0].id, delta: added.length, type: "purchase", referenceType: "import", referenceId: existing.id, userId: staff.id, note: `${added.length} serial number(s) added by product import` });
+              serialsAdded += added.length;
+              stockSet++;
+            }
+            if (added.length < p.serials.length) notes.push(`${p.name}: ${p.serials.length - added.length} serial number(s) were already recorded and were not counted again.`);
+          } else if (variants.length > 1) {
+            notes.push(`${p.name}: has several variants, so its serial numbers were not added.`);
+          }
+        } else if (p.stock !== undefined && existing.id) {
           const variants = await tx.select({ id: productVariants.id, onHand: inventory.onHand }).from(productVariants).leftJoin(inventory, eq(inventory.variantId, productVariants.id)).where(and(eq(productVariants.productId, existing.id), eq(productVariants.isActive, true)));
           if (variants.length === 1) {
             const delta = p.stock - (variants[0].onHand ?? 0);
@@ -500,7 +541,12 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
           .returning({ id: products.id });
         const [v] = await tx.insert(productVariants).values({ productId: np.id, sku: `${sku}-STD`, isDefault: true }).returning({ id: productVariants.id });
         await tx.insert(inventory).values({ variantId: v.id });
-        if (p.stock && p.stock > 0) await adjustStock(tx, { variantId: v.id, delta: p.stock, type: "purchase", referenceType: "import", referenceId: np.id, userId: staff.id, note: "Import opening stock" });
+        if (p.serials.length) {
+          await tx.insert(productSerials).values(p.serials.map((serial) => ({ productId: np.id, serial })));
+          serialsAdded += p.serials.length;
+        }
+        const opening = p.serials.length || p.stock || 0;
+        if (opening > 0) await adjustStock(tx, { variantId: v.id, delta: opening, type: "purchase", referenceType: "import", referenceId: np.id, userId: staff.id, note: "Import opening stock" });
         created++;
       }
     }
@@ -508,6 +554,7 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
     if (created > 0) demoRemoved = await removeDemoProducts(tx, staff);
     await audit({ actor: staff, action: "product.imported", module: "Products", description: `Product import: ${created} created, ${updated} updated${stockSet ? `, stock set on ${stockSet}` : ""}${newBrands.size ? `, ${newBrands.size} brand(s) added` : ""}` }, tx);
   });
+  if (serialsAdded) notes.unshift(`${serialsAdded} serial number(s) recorded and counted as stock.`);
   if (stockSet) notes.unshift(`Stock updated on ${stockSet} existing product(s).`);
   if (demoRemoved) notes.unshift(`${demoRemoved} placeholder product(s) were removed — the shop now shows only your own products.`);
   return { ok: true, errors: [], notes, count: parsed.length, created, updated };

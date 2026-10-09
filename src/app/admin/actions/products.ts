@@ -7,7 +7,7 @@ import { z } from "zod";
 import { parseCsv } from "@/lib/csv";
 import { audit } from "@/server/audit";
 import { db } from "@/server/db";
-import { productImages, products } from "@/server/db/schema";
+import { productImages, productSerials, products } from "@/server/db/schema";
 import { runAction, UserError } from "@/server/errors";
 import { requirePermission } from "@/server/session";
 import { addPhotoFromLink, findPhotosBatch, photoSearchReady, photosWaiting, refindPhoto, requeueAllPhotos, keepGeneratedPicture } from "@/server/services/product-photos";
@@ -158,4 +158,20 @@ export async function addPhotoFromLinkAction(productId: string, link: string) {
     revalidatePath(`/admin/products/${id}`);
     revalidatePath("/", "layout");
   }, "Picture added");
+}
+
+/** Marks one unit (by serial number) as sold or back in stock. A record only; stock is not changed. */
+export async function setSerialSoldAction(serialId: string, sold: boolean) {
+  return runAction(async () => {
+    const staff = await requirePermission("products.edit");
+    const id = z.string().uuid().parse(serialId);
+    const [row] = await db
+      .update(productSerials)
+      .set({ status: sold ? "sold" : "in_stock", soldAt: sold ? new Date() : null })
+      .where(eq(productSerials.id, id))
+      .returning({ productId: productSerials.productId, serial: productSerials.serial });
+    if (!row) throw new UserError("That serial number no longer exists.");
+    await audit({ actor: staff, action: "product.serial_updated", module: "Products", description: `Serial ${row.serial} marked ${sold ? "sold" : "in stock"}`, entityType: "product", entityId: row.productId });
+    revalidatePath(`/admin/products/${row.productId}`);
+  });
 }

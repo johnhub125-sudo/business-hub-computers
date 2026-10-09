@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { renderProductArt } from "@/lib/product-art";
 import { productKind } from "@/lib/product-kind";
 import { db } from "@/server/db";
-import { brands, categories, inventory, productConditions, productVariants, products } from "@/server/db/schema";
+import { brands, categories, inventory, productConditions, productSerials, productVariants, products } from "@/server/db/schema";
 import { productArtUrl, productImage, readArtSegment } from "@/server/product-art-url";
 import { listProducts } from "@/server/queries/catalog";
 import { buildProductTemplate, parseProductSheet, SHEET_COLUMNS } from "@/server/services/product-sheet";
@@ -174,5 +174,42 @@ describe("automatic product pictures", () => {
     expect(svg).not.toContain("<Core");
     expect(svg.length).toBeLessThan(9000);
     expect(renderProductArt({ name: "", kind: "printer", accent: "#D62828", compact: true }).length).toBeLessThan(6000);
+  });
+});
+
+describe("Serial numbers in the product import", () => {
+  beforeEach(async () => {
+    await resetDb();
+    staff.id = await makeUser({ userType: "staff" });
+    await seedCatalogue();
+  });
+  const row = { name: "HP EliteBook 840 G8", category: "Computers", condition: "UK Used", price: 520000 };
+  const serialsOf = async (productId: string) => (await db.select().from(productSerials).where(eq(productSerials.productId, productId))).map((s) => s.serial).sort();
+
+  it("counts the serial numbers in one cell as the stock quantity", async () => {
+    const res = await importProducts(await fillTemplate([{ ...row, serial_numbers: "5cg001, 5CG002 ,5CG003,\n5CG004" }]), staff, false);
+    expect(res.ok).toBe(true);
+    const [p] = await db.select().from(products);
+    expect(await stockOf(p.id)).toBe(4);
+    expect(await serialsOf(p.id)).toEqual(["5CG001", "5CG002", "5CG003", "5CG004"]);
+  });
+
+  it("adds only new serial numbers to an existing product", async () => {
+    await importProducts(await fillTemplate([{ ...row, serial_numbers: "A1, A2" }]), staff, false);
+    const res = await importProducts(await fillTemplate([{ ...row, serial_numbers: "A2, A3, A4" }]), staff, false);
+    const [p] = await db.select().from(products);
+    expect(await stockOf(p.id)).toBe(4);
+    expect(await serialsOf(p.id)).toEqual(["A1", "A2", "A3", "A4"]);
+    expect(res.notes.join(" ")).toContain("already recorded");
+  });
+
+  it("refuses repeated serial numbers and a stock quantity that disagrees", async () => {
+    const twice = await importProducts(await fillTemplate([{ ...row, serial_numbers: "A1, A2, a1" }]), staff, true);
+    expect(twice.ok).toBe(false);
+    const mismatch = await importProducts(await fillTemplate([{ ...row, stock: 5, serial_numbers: "A1, A2" }]), staff, true);
+    expect(mismatch.errors[0].message).toContain("2 serial numbers");
+    const shared = await importProducts(await fillTemplate([{ ...row, serial_numbers: "A1" }, { ...row, condition: "Brand New", serial_numbers: "A1" }]), staff, true);
+    expect(shared.errors[0].message).toContain("also on row");
+    expect((await importProducts(await fillTemplate([{ ...row, stock: 2, serial_numbers: "A1, A2" }]), staff, true)).ok).toBe(true);
   });
 });

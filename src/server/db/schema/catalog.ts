@@ -299,6 +299,26 @@ export const inventoryReservations = pgTable(
   ],
 );
 
+/**
+ * Serial numbers of individual units (laptops, phones, …). Added through the product import;
+ * each new serial adds one unit of stock. Stored upper-case so the same serial is never counted twice.
+ */
+export const productSerials = pgTable(
+  "product_serials",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    productId: uuid()
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    serial: text().notNull(),
+    /** "in_stock" | "sold" */
+    status: text().notNull().default("in_stock"),
+    createdAt: ts().notNull().defaultNow(),
+    soldAt: ts(),
+  },
+  (t) => [uniqueIndex("product_serials_product_serial_idx").on(t.productId, t.serial)],
+);
+
 /* ------------------------------------------------------------------ */
 /* Purchases                                                           */
 /* ------------------------------------------------------------------ */

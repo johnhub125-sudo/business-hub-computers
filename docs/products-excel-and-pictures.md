@@ -77,3 +77,12 @@ Firefox on desktop cannot install web apps, so no banner is shown there.
 `next dev` reads `.env.development.local` before `.env.local`. Keep
 `DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5433/postgres` there so local testing never
 writes to the live database, even if `.env.local` points at Neon for running setup scripts.
+
+## Serial numbers
+
+The template has a **Serial numbers** column. Type every unit's serial number in that one cell, separated by commas (`5CG001, 5CG002, 5CG003`). The count becomes the stock, so leave *Stock quantity* blank (if you fill it, it must equal the count).
+
+- New product: stock = number of serial numbers.
+- Existing product: serial numbers not yet recorded are added and each adds one to stock; ones already recorded are not counted again, so uploading the same file twice is safe.
+- The check refuses a serial number repeated in a cell or used on two rows.
+- The product's edit page lists its serial numbers; click one to mark that unit sold.
