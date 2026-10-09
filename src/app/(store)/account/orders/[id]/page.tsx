@@ -1,6 +1,7 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { Download, Headset, MapPin, MessageCircle, Phone } from "lucide-react";
 import type { Metadata } from "next";
+import { serialsByItem } from "@/server/services/serials";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CancelOrderButton, PayNowButton, RefundRequestForm, TransferProofForm } from "@/components/account/order-actions";
@@ -34,6 +35,7 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
     db.select().from(refunds).where(eq(refunds.orderId, order.id)).orderBy(desc(refunds.createdAt)),
     getSettings(),
   ]);
+  const serials = await serialsByItem(items.map((i) => i.id));
   const unpaid = !["successful", "refunded", "partially_refunded", "cancelled"].includes(order.paymentStatus) && order.status !== "cancelled";
   const canCancel = ["pending_payment", "payment_processing"].includes(order.status) && !["successful", "verification_pending"].includes(order.paymentStatus);
   const canRefund = order.paymentStatus === "successful" && !["refund_requested", "refunded", "cancelled"].includes(order.status) && !refundRows.some((r) => ["requested", "approved", "processing"].includes(r.status));
@@ -125,6 +127,7 @@ export default async function OrderDetailPage({ params, searchParams }: PageProp
                     SKU {i.sku} · Qty {i.quantity} × {formatMoney(i.unitPrice)}
                     {i.warranty ? ` · ${i.warranty}` : ""}
                   </span>
+                  {serials.get(i.id)?.length ? <span className="block font-mono text-xs text-muted">S/N {serials.get(i.id)!.map((x) => x.serial).join(", ")}</span> : null}
                 </span>
                 <span className="font-semibold">{formatMoney(i.lineTotal)}</span>
               </li>

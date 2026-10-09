@@ -29,6 +29,13 @@
       "when": 1791537369454,
       "tag": "0003_product_serials",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791538449014,
+      "tag": "0004_serial_order_link",
+      "breakpoints": true
     }
   ]
 }

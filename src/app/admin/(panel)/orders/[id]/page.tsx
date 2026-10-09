@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, like, or } from "drizzle-orm";
 import { Mail, MessageCircle, Phone, Printer } from "lucide-react";
 import type { Metadata } from "next";
+import { OrderSerials } from "@/components/admin/order-serials";
+import { freeSerials, serialsByItem } from "@/server/services/serials";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DeliveryControl, NoteControl, ReceiptControl, RefundControl, StatusControl } from "@/components/admin/order-controls";
@@ -40,6 +42,7 @@ export default async function AdminOrderPage({ params }: PageProps<"/admin/order
     db.select().from(outboxMessages).where(or(like(outboxMessages.dedupeKey, `%:${id}`), like(outboxMessages.dedupeKey, `%:${id}:%`))).orderBy(asc(outboxMessages.createdAt)),
     db.select({ id: user.id, name: user.name }).from(user).innerJoin(staffProfiles, eq(staffProfiles.userId, user.id)).where(and(eq(staffProfiles.approval, "approved"), eq(user.status, "active"))),
   ]);
+  const [serials, free] = await Promise.all([serialsByItem(items.map((i) => i.id)), freeSerials(items.flatMap((i) => (i.productId ? [i.productId] : [])))]);
   const payEvents = pays.length ? await db.select().from(paymentEvents).where(or(...pays.map((p) => eq(paymentEvents.paymentId, p.id)))).orderBy(asc(paymentEvents.createdAt)) : [];
 
   const timeline = [
@@ -93,6 +96,7 @@ export default async function AdminOrderPage({ params }: PageProps<"/admin/order
                         {i.variantName ? `${i.variantName} · ` : ""}SKU {i.sku}
                         {i.warranty ? ` · ${i.warranty}` : ""}
                       </span>
+                      {serials.get(i.id)?.length ? <OrderSerials serials={serials.get(i.id)!} free={(i.productId && free.get(i.productId)) || []} /> : null}
                       {i.dropshipPartner && (
                         <span className="mt-1 inline-block rounded-md bg-slate-800 px-2 py-0.5 text-[11px] font-bold text-white">Dropship — order from {i.dropshipPartner}</span>
                       )}

@@ -173,3 +173,26 @@ describe("bank transfer and refunds", () => {
     await expect(processRefund(r.id, staff, "approve")).rejects.toThrow(/already/);
   });
 });
+
+describe("serial numbers on paid orders", () => {
+  it("gives the paid order its unit automatically, prints it on the receipt, and lets staff swap it", async () => {
+    const { productSerials, orderItems } = await import("@/server/db/schema");
+    const { receiptData } = await import("@/server/services/receipts");
+    const { swapSerial } = await import("@/server/services/serials");
+    const { payment, order, variant } = await placeOrder();
+    await db.insert(productSerials).values(["SN-A", "SN-B", "SN-C"].map((serial, i) => ({ productId: variant.productId, serial, createdAt: new Date(Date.now() + i * 1000) })));
+    verifyMock.mockResolvedValue(paystackTx(payment));
+    await finalizePaystackPayment(payment.reference, "callback");
+    await finalizePaystackPayment(payment.reference, "webhook");
+
+    const [item] = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+    const sold = (await db.select().from(productSerials)).filter((s) => s.status === "sold");
+    expect(sold.map((s) => [s.serial, s.orderItemId])).toEqual([["SN-A", item.id]]); // oldest unit, once
+    expect((await receiptData(order.id))!.items[0].serials).toEqual(["SN-A"]);
+
+    const all = await db.select().from(productSerials);
+    await swapSerial(all.find((s) => s.serial === "SN-A")!.id, all.find((s) => s.serial === "SN-C")!.id);
+    expect((await receiptData(order.id))!.items[0].serials).toEqual(["SN-C"]);
+    expect((await db.select().from(productSerials)).filter((s) => s.status === "in_stock").map((s) => s.serial).sort()).toEqual(["SN-A", "SN-B"]);
+  });
+});

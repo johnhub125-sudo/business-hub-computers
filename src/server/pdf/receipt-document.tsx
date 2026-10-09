@@ -120,6 +120,7 @@ export function ReceiptDocument({ data, logo }: { data: ReceiptData; logo: Buffe
               <View style={{ width: "38%" }}>
                 <Text style={s.bold}>{it.name}</Text>
                 {it.variant ? <Text style={s.muted}>{it.variant}</Text> : null}
+                {it.serials.length ? <Text style={[s.muted, { fontSize: 7.5 }]}>S/N: {it.serials.join(", ")}</Text> : null}
                 {data.showWarranty && it.warranty ? <Text style={[s.muted, { fontSize: 7.5 }]}>Warranty: {it.warranty}</Text> : null}
               </View>
               <Text style={{ width: "16%" }}>{it.sku}</Text>

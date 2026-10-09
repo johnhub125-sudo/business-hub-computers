@@ -16,6 +16,7 @@ import { requirePermission } from "@/server/session";
 import { notify } from "@/server/services/notifications";
 import { changeOrderStatus, orderSummaryFrom } from "@/server/services/orders";
 import { requestRefund } from "@/server/services/payments";
+import { swapSerial } from "@/server/services/serials";
 import { orderItems } from "@/server/db/schema";
 import { appUrl } from "@/server/env";
 
@@ -124,4 +125,14 @@ export async function adminRequestRefundAction(orderId: string, amountNaira: str
     await requestRefund({ orderId: uuid.parse(orderId), amount, reason: z.string().trim().min(5).max(1000).parse(reason), requestedBy: staff.id });
     refresh();
   }, "Refund requested — a finance officer must approve it.");
+}
+
+/** The unit handed to the customer was a different one: replace the serial number on the order. */
+export async function swapSerialAction(fromId: string, toId: string) {
+  return runAction(async () => {
+    const staff = await requirePermission("orders.manage");
+    const res = await swapSerial(uuid.parse(fromId), uuid.parse(toId));
+    await audit({ actor: staff, action: "order.serial_changed", module: "Orders", description: `Serial number changed from ${res.from} to ${res.to}`, entityType: "order", entityId: res.orderId });
+    refresh();
+  }, "Serial number changed");
 }

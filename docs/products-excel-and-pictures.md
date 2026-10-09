@@ -86,3 +86,11 @@ The template has a **Serial numbers** column. Type every unit's serial number in
 - Existing product: serial numbers not yet recorded are added and each adds one to stock; ones already recorded are not counted again, so uploading the same file twice is safe.
 - The check refuses a serial number repeated in a cell or used on two rows.
 - The product's edit page lists its serial numbers; click one to mark that unit sold.
+
+### Serial numbers on orders (automatic)
+
+- When an order is paid (card, verified transfer or POS), the oldest in-stock units of each product are given to the order and marked sold. Nobody has to pick them.
+- The serial numbers show on the admin order page, the customer's order page and the PDF receipt (as `S/N`).
+- If staff hand over a different unit, use the ⇄ menu beside the serial on the order to swap it for another unit in stock.
+- Cancelling an order puts its units back in stock.
+- Typing a serial number in the admin search finds the product and the order it was sold on — useful for warranty claims.

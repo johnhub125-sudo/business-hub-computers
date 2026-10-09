@@ -167,7 +167,7 @@ export async function setSerialSoldAction(serialId: string, sold: boolean) {
     const id = z.string().uuid().parse(serialId);
     const [row] = await db
       .update(productSerials)
-      .set({ status: sold ? "sold" : "in_stock", soldAt: sold ? new Date() : null })
+      .set({ status: sold ? "sold" : "in_stock", soldAt: sold ? new Date() : null, ...(sold ? {} : { orderItemId: null }) })
       .where(eq(productSerials.id, id))
       .returning({ productId: productSerials.productId, serial: productSerials.serial });
     if (!row) throw new UserError("That serial number no longer exists.");

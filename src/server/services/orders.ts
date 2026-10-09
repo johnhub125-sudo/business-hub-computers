@@ -22,6 +22,7 @@ import { UserError } from "../errors";
 import { enqueueWhatsApp } from "../integrations/whatsapp";
 import { getSettingsFor } from "../settings";
 import { commitOrder, releaseOrder, reserve } from "./inventory";
+import { assignSerials, releaseSerials } from "./serials";
 import { notify, notifyStaff } from "./notifications";
 import { nextNumber } from "./numbers";
 import { assertQuoteOk, quote, type Fulfilment } from "./pricing";
@@ -214,6 +215,8 @@ export async function fulfilPaidOrder(
     items.filter((i) => i.variantId).map((i) => ({ variantId: i.variantId!, quantity: i.quantity })),
     input.actorId,
   );
+  // Units with recorded serial numbers are picked automatically (oldest stock first).
+  await assignSerials(tx, order.id);
 
   const now = new Date();
   const trackingNumber = order.trackingNumber ?? (await nextNumber(tx, "tracking"));
@@ -331,6 +334,7 @@ export async function changeOrderStatus(
   await tx.update(orders).set(patch).where(eq(orders.id, order.id));
   if (input.to === "cancelled") {
     await releaseOrder(tx, order.id, { userId: input.actor.id, note: "Order cancelled" });
+    await releaseSerials(tx, order.id);
     await tx.update(payments).set({ status: "cancelled", updatedAt: now }).where(and(eq(payments.orderId, order.id), inArray(payments.status, ["pending", "initialized", "verification_pending"])));
     await tx.update(orders).set({ paymentStatus: "cancelled" }).where(and(eq(orders.id, order.id), inArray(orders.paymentStatus, ["pending", "initialized", "verification_pending"])));
   }

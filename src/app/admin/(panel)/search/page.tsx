@@ -5,7 +5,7 @@ import { AdminHeader, Panel, type SP } from "@/components/admin/ui";
 import { formatMoney } from "@/lib/money";
 import { formatDateTime } from "@/lib/utils";
 import { db } from "@/server/db";
-import { auditLogs, orders, payments, products, receipts, staffProfiles, supportTickets, tasks, user } from "@/server/db/schema";
+import { orderItems, productSerials, auditLogs, orders, payments, products, receipts, staffProfiles, supportTickets, tasks, user } from "@/server/db/schema";
 import { can, requireStaffPage } from "@/server/session";
 
 export const metadata: Metadata = { title: "Search" };
@@ -32,7 +32,18 @@ export default async function AdminSearchPage({ searchParams }: PageProps<"/admi
       can(staff, "support.manage") ? db.select().from(supportTickets).where(or(ilike(supportTickets.ticketNumber, like), ilike(supportTickets.subject, like), ilike(supportTickets.email, like))).limit(L) : [],
       can(staff, "audit.view") ? db.select().from(auditLogs).where(or(ilike(auditLogs.description, like), ilike(auditLogs.actorEmail, like), ilike(auditLogs.action, like))).orderBy(desc(auditLogs.createdAt)).limit(L) : [],
     ]);
+    const sn = can(staff, "products.view") || can(staff, "orders.manage")
+      ? await db
+          .select({ serial: productSerials.serial, status: productSerials.status, productId: productSerials.productId, product: products.name, orderId: orders.id, orderNumber: orders.orderNumber, customer: orders.customerName })
+          .from(productSerials)
+          .innerJoin(products, eq(products.id, productSerials.productId))
+          .leftJoin(orderItems, eq(orderItems.id, productSerials.orderItemId))
+          .leftJoin(orders, eq(orders.id, orderItems.orderId))
+          .where(ilike(productSerials.serial, like))
+          .limit(L)
+      : [];
     groups.push(
+      { title: "Serial numbers", hits: sn.map((x) => ({ href: x.orderId ? `/admin/orders/${x.orderId}` : `/admin/products/${x.productId}`, title: x.serial, sub: x.orderId ? `${x.product} · sold on ${x.orderNumber} to ${x.customer}` : `${x.product} · ${x.status === "sold" ? "sold" : "in stock"}` })) },
       { title: "Products", hits: p.map((x) => ({ href: `/admin/products/${x.id}`, title: x.name, sub: `${x.sku} · ${formatMoney(x.price)}` })) },
       { title: "Orders", hits: o.map((x) => ({ href: `/admin/orders/${x.id}`, title: x.orderNumber, sub: `${x.customerName} · ${formatMoney(x.grandTotal)} · ${x.status}` })) },
       { title: "Customers", hits: c.map((x) => ({ href: `/admin/customers/${x.id}`, title: x.name, sub: x.email })) },

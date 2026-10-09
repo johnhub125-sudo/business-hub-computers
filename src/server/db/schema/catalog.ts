@@ -315,8 +315,10 @@ export const productSerials = pgTable(
     status: text().notNull().default("in_stock"),
     createdAt: ts().notNull().defaultNow(),
     soldAt: ts(),
+    /** The order line this unit was sold on (order_items.id). */
+    orderItemId: uuid(),
   },
-  (t) => [uniqueIndex("product_serials_product_serial_idx").on(t.productId, t.serial)],
+  (t) => [uniqueIndex("product_serials_product_serial_idx").on(t.productId, t.serial), index("product_serials_order_item_idx").on(t.orderItemId)],
 );
 
 /* ------------------------------------------------------------------ */
