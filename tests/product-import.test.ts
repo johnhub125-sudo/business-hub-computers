@@ -213,3 +213,45 @@ describe("Serial numbers in the product import", () => {
     expect((await importProducts(await fillTemplate([{ ...row, stock: 2, serial_numbers: "A1, A2" }]), staff, true)).ok).toBe(true);
   });
 });
+
+describe("Export to Excel and import back", () => {
+  beforeEach(async () => {
+    await resetDb();
+    staff.id = await makeUser({ userType: "staff" });
+    await seedCatalogue();
+  });
+
+  it("round-trips products with their serial numbers; added serials raise the stock", async () => {
+    await importProducts(
+      await fillTemplate([
+        { name: "HP EliteBook 840 G8", category: "Computers", subcategory: "Business Laptops", brand: "HP", condition: "UK Used", price: 520000, serial_numbers: "A1, A2", specifications: "RAM: 16GB", featured: "Yes" },
+        { name: "Epson EcoTank L3250 Printer", category: "Printers", condition: "Brand New", price: 285000, stock: 7 },
+      ]),
+      staff,
+      false,
+    );
+    const before = await db.select().from(products);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildProductTemplate({ withProducts: true })).buffer as ArrayBuffer);
+    const ws = wb.getWorksheet("Products")!;
+    const head = (ws.getRow(1).values as string[]).map((h) => String(h ?? "").replace(" *", ""));
+    const hp = [2, 3].find((r) => ws.getCell(r, head.indexOf("Product name")).text.startsWith("HP"))!;
+    const sn = ws.getCell(hp, head.indexOf("Serial numbers"));
+    expect(sn.text).toBe("A1, A2");
+    expect(ws.getCell(hp, head.indexOf("Stock quantity")).text).toBe("");
+
+    // Unchanged export imported back: nothing moves.
+    const same = await importProducts(await parseProductSheet((await wb.xlsx.writeBuffer()) as ArrayBuffer), staff, false);
+    expect(same).toMatchObject({ ok: true, created: 0, updated: 2 });
+    expect(await db.select().from(products)).toHaveLength(2);
+    for (const p of before) expect(await stockOf(p.id)).toBe(p.name.startsWith("HP") ? 2 : 7);
+
+    // Three more units typed into the same cell.
+    sn.value = "A1, A2, A3, A4, A5";
+    await importProducts(await parseProductSheet((await wb.xlsx.writeBuffer()) as ArrayBuffer), staff, false);
+    const hpProduct = before.find((p) => p.name.startsWith("HP"))!;
+    expect(await stockOf(hpProduct.id)).toBe(5);
+    const [after] = await db.select().from(products).where(eq(products.id, hpProduct.id));
+    expect(after).toMatchObject({ price: hpProduct.price, isFeatured: true, specifications: { RAM: "16GB" }, subcategoryId: hpProduct.subcategoryId, slug: hpProduct.slug });
+  });
+});

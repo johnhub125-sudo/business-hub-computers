@@ -73,6 +73,10 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
           <a href="/admin/products-template" download className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold hover:bg-surface">
             <Download className="size-4" aria-hidden /> Download Excel template
           </a>
+          <a href="/admin/products-template?products=1" download className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold hover:bg-surface">
+            <Download className="size-4" aria-hidden /> Export my products to Excel
+          </a>
+          <p className="mt-2 text-xs text-muted">The export holds your current products with their serial numbers. Edit it, add serial numbers, and import it back.</p>
         </li>
         <li className="rounded-xl border border-line p-4 md:col-span-2">
           <p className="text-xs font-bold uppercase tracking-wide text-brand-600">Steps 2 &amp; 3</p>

@@ -94,3 +94,7 @@ The template has a **Serial numbers** column. Type every unit's serial number in
 - If staff hand over a different unit, use the ⇄ menu beside the serial on the order to swap it for another unit in stock.
 - Cancelling an order puts its units back in stock.
 - Typing a serial number in the admin search finds the product and the order it was sold on — useful for warranty claims.
+
+### Export, edit, import back
+
+**Add product → Export my products to Excel** downloads the same sheet filled with your current products (up to 1,000), including each product's in-stock serial numbers and a SKU column that identifies it. Edit prices or details, type more serial numbers into a product's cell, add new rows, then import the file back. Importing an unchanged export changes nothing.

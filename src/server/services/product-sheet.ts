@@ -1,8 +1,8 @@
 import "server-only";
 import ExcelJS from "exceljs";
-import { asc } from "drizzle-orm";
+import { asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
-import { brands, categories, productConditions } from "../db/schema";
+import { brands, categories, productConditions, productSerials, products } from "../db/schema";
 import { UserError } from "../errors";
 
 /**
@@ -11,7 +11,7 @@ import { UserError } from "../errors";
  */
 type Column = { key: string; header: string; width: number; required?: boolean; help: string; list?: "category" | "subcategory" | "brand" | "condition" | "yesno" | "status" };
 
-export const SHEET_COLUMNS: Column[] = [
+const TEMPLATE_COLUMNS: Column[] = [
   { key: "name", header: "Product name", width: 44, required: true, help: "The full name customers will see. The product code (SKU) and web address are created for you. A row with the same name and condition as an existing product updates it." },
   { key: "category", header: "Category", width: 20, required: true, list: "category", help: "Pick from the list. Decides where the product appears in the shop menu." },
   { key: "subcategory", header: "Subcategory", width: 22, list: "subcategory", help: "Optional. Must belong to the chosen category." },
@@ -34,6 +34,8 @@ export const SHEET_COLUMNS: Column[] = [
   { key: "dropship_partner", header: "Dropship partner", width: 24, help: "Only for goods supplied and shipped by another company: type that company’s name. Leave blank for goods from your own stock." },
   { key: "dropship_days", header: "Dropship delivery days", width: 22, help: "For dropship goods: usual number of days to deliver, e.g. 7." },
 ];
+
+export const SHEET_COLUMNS = TEMPLATE_COLUMNS;
 
 const MAX_ROWS = 1000;
 const NAVY = "FF1B2A7B";
@@ -59,8 +61,68 @@ const colLetter = (n: number) => {
   return s;
 };
 
-/** Builds the .xlsx template with dropdowns filled from the live categories, brands and conditions. */
-export async function buildProductTemplate(): Promise<Buffer> {
+/** Current products as template rows, so the sheet can be edited in Excel and imported back. */
+async function currentProductRows(): Promise<Record<string, string | number>[]> {
+  const [rows, serials, cats] = await Promise.all([
+    db
+      .select({
+        p: products,
+        brand: brands.name,
+        condition: productConditions.name,
+        stock: sql<number>`coalesce((SELECT sum(i.on_hand) FROM inventory i JOIN product_variants v ON v.id = i.variant_id WHERE v.product_id = ${products.id}),0)::int`,
+      })
+      .from(products)
+      .leftJoin(brands, eq(brands.id, products.brandId))
+      .innerJoin(productConditions, eq(productConditions.id, products.conditionId))
+      .where(isNull(products.deletedAt))
+      .orderBy(asc(products.name))
+      .limit(MAX_ROWS),
+    db.select({ productId: productSerials.productId, serial: productSerials.serial }).from(productSerials).where(eq(productSerials.status, "in_stock")).orderBy(asc(productSerials.serial)),
+    db.select({ id: categories.id, name: categories.name }).from(categories),
+  ]);
+  const catName = new Map(cats.map((c) => [c.id, c.name]));
+  const bySerial = new Map<string, string[]>();
+  for (const s of serials) bySerial.set(s.productId, [...(bySerial.get(s.productId) ?? []), s.serial]);
+  const yn = (v: boolean) => (v ? "Yes" : "No");
+  const blankable = (o: Record<string, string | number | null | undefined>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v != null && v !== "")) as Record<string, string | number>;
+  return rows.map(({ p, brand, condition, stock }) => {
+    const sn = bySerial.get(p.id) ?? [];
+    return blankable({
+      sku: p.sku,
+      name: p.name,
+      category: catName.get(p.categoryId),
+      subcategory: p.subcategoryId ? catName.get(p.subcategoryId) : "",
+      brand,
+      condition,
+      price: p.price / 100,
+      discount_price: p.discountPrice != null ? p.discountPrice / 100 : null,
+      purchase_price: p.purchasePrice ? p.purchasePrice / 100 : null,
+      // With serial numbers the count is the quantity, so Stock stays blank (and is left unchanged on import).
+      stock: sn.length || p.fulfilment === "dropship" ? null : stock,
+      serial_numbers: sn.join(", "),
+      short_description: p.shortDescription,
+      description: p.description,
+      specifications: Object.entries(p.specifications ?? {}).map(([k, v]) => `${k}: ${v}`).join("; "),
+      warranty: p.warranty,
+      featured: yn(p.isFeatured),
+      deal: yn(p.isDeal),
+      new_arrival: yn(p.isNewArrival),
+      best_seller: yn(p.isBestSeller),
+      status: p.status === "draft" ? "Draft" : p.status === "active" ? "Active" : p.status,
+      dropship_partner: p.fulfilment === "dropship" ? p.dropshipPartner : "",
+      dropship_days: p.fulfilment === "dropship" ? p.dropshipLeadDays : null,
+    });
+  });
+}
+
+/**
+ * Builds the .xlsx template with dropdowns filled from the live categories, brands and conditions.
+ * With `withProducts`, the sheet comes filled with the current products (and a SKU column that
+ * identifies each one), ready to edit and import back.
+ */
+export async function buildProductTemplate(opts: { withProducts?: boolean } = {}): Promise<Buffer> {
+  const SHEET_COLUMNS: Column[] = opts.withProducts ? [{ key: "sku", header: "SKU", width: 18, help: "Identifies the product. Do not change it. Leave blank on a new row and one is created for you." }, ...TEMPLATE_COLUMNS] : TEMPLATE_COLUMNS;
+  const filled = opts.withProducts ? await currentProductRows() : [];
   const [cats, brs, conds] = await Promise.all([
     db.select({ id: categories.id, name: categories.name, parentId: categories.parentId }).from(categories).orderBy(asc(categories.sortOrder), asc(categories.name)),
     db.select({ name: brands.name }).from(brands).orderBy(asc(brands.name)),
@@ -90,6 +152,12 @@ export async function buildProductTemplate(): Promise<Buffer> {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: col.required ? RED : NAVY } };
     cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
     cell.note = col.help;
+  });
+
+  filled.forEach((r, i) => {
+    SHEET_COLUMNS.forEach((c, n) => {
+      if (r[c.key] !== undefined) ws.getCell(i + 2, n + 1).value = r[c.key];
+    });
   });
 
   // ── Lists (feeds the dropdowns) ──
