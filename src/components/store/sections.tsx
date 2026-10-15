@@ -8,7 +8,7 @@ import { categoryCounts, getNavigation, latestReviews, productRail, representati
 import { getBranches, getGallery, getProjects, getSiteContent, getTeam, getTestimonials } from "@/server/queries/content";
 import { getSettings } from "@/server/settings";
 import { CategoryTabs } from "./category-tabs";
-import { CATEGORY_ART, DynamicIcon } from "./icons";
+import { DynamicIcon } from "./icons";
 import { isPlaceholderImage } from "@/lib/product-kind";
 import { directionsUrl, MapEmbed } from "./map-embed";
 import { NewsletterForm } from "./newsletter-form";
@@ -44,14 +44,20 @@ export async function TrustBar() {
 
 export async function CategoriesSection({ s }: { s: Section }) {
   const [nav, counts, photos] = await Promise.all([getNavigation(), categoryCounts(), representativePhotos()]);
+  // Only categories that have products with a real photo: no empty tiles, no drawings.
+  const tiles = nav.categories.flatMap((c) => {
+    const photo = c.image && !isPlaceholderImage(c.image) ? c.image : photos.category.get(c.id);
+    return photo && (counts.get(c.id) ?? 0) > 0 ? [{ ...c, photo }] : [];
+  });
+  if (!tiles.length) return null;
   return (
     <section>
       <SectionHeading title={s.title ?? "Shop by category"} subtitle={s.subtitle} href="/categories" />
       <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:grid-cols-6">
-        {nav.categories.map((c) => (
+        {tiles.map((c) => (
           <Link key={c.id} href={`/categories/${c.slug}`} className="group flex flex-col items-center rounded-2xl border border-line bg-white p-3 text-center transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-[var(--shadow-lift)] sm:p-4">
-            <span className="relative mb-2 aspect-square w-full overflow-hidden rounded-xl bg-surface">
-              <ProductImage src={(c.image && !isPlaceholderImage(c.image) ? c.image : photos.category.get(c.slug)) ?? CATEGORY_ART[c.slug]} alt="" fill sizes="(max-width:1024px) 30vw, 15vw" className="p-2 transition group-hover:scale-105" />
+            <span className="relative mb-2 aspect-square w-full overflow-hidden rounded-xl bg-white">
+              <ProductImage src={c.photo} alt="" fill sizes="(max-width:1024px) 30vw, 15vw" className="p-2 transition group-hover:scale-105" />
             </span>
             <span className="text-[13.5px] font-bold text-ink sm:text-sm">{c.name}</span>
             <span className="text-xs text-muted">{counts.get(c.id) ?? 0} products</span>
@@ -99,22 +105,18 @@ export async function CollectionsSection({ s }: { s: Section }) {
       <SectionHeading title={s.title ?? "Brand new or UK used?"} subtitle={s.subtitle} />
       <div className="grid gap-4 md:grid-cols-2">
         {[
-          { href: "/brand-new", title: "Brand New", text: "Factory-sealed devices with full manufacturer warranty. The latest processors and designs.", img: photos.condition.get("brand-new") ?? "/images/catalog/laptop-1.svg", cls: "from-brand-700 to-brand-900" },
-          { href: "/uk-used", title: "UK Used", text: "Grade-A business-class machines, individually tested and certified — premium quality for less.", img: photos.condition.get("uk-used") ?? "/images/catalog/laptop-2.svg", cls: "from-accent-600 to-accent-800" },
+          { href: "/brand-new", title: "Brand New", text: "Factory-sealed devices with full manufacturer warranty. The latest processors and designs.", img: photos.condition.get("brand-new"), cls: "from-brand-700 to-brand-900" },
+          { href: "/uk-used", title: "UK Used", text: "Grade-A business-class machines, individually tested and certified — premium quality for less.", img: photos.condition.get("uk-used"), cls: "from-accent-600 to-accent-800" },
         ].map((c) => (
           <Link key={c.href} href={c.href} className={`group relative flex min-h-56 overflow-hidden rounded-3xl bg-gradient-to-br ${c.cls} p-6 text-white sm:p-8`}>
-            <div className="relative z-10 max-w-[60%]">
+            <div className={`relative z-10 ${c.img ? "max-w-[60%]" : "max-w-xl"}`}>
               <h3 className="font-display text-2xl font-extrabold sm:text-3xl">{c.title}</h3>
               <p className="mt-2 text-sm text-white/85 sm:text-[15px]">{c.text}</p>
               <span className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-bold text-ink transition group-hover:gap-2.5">
                 Shop {c.title.toLowerCase()} <ArrowRight className="size-4" aria-hidden />
               </span>
             </div>
-            {isPlaceholderImage(c.img) ? (
-              <div className="absolute -bottom-6 -right-6 size-60 opacity-95 transition duration-500 group-hover:scale-105 sm:size-72">
-                <Image src={c.img} alt="" fill unoptimized className="object-contain" />
-              </div>
-            ) : (
+            {c.img && (
               // A real product photo, framed like a print so its own background looks intentional.
               <div className="absolute bottom-5 right-5 size-36 rotate-3 overflow-hidden rounded-2xl bg-white p-2 shadow-2xl ring-1 ring-white/40 transition duration-500 group-hover:rotate-0 group-hover:scale-105 sm:size-48">
                 <Image src={c.img} alt="" fill sizes="200px" className="object-contain p-2" />

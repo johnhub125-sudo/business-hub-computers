@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CATEGORY_ART } from "@/components/store/icons";
 import { isPlaceholderImage } from "@/lib/product-kind";
 import { ProductImage } from "@/components/store/product-image";
 import { Breadcrumbs } from "@/components/ui/misc";
@@ -17,8 +16,14 @@ export default async function CategoriesPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {nav.categories.map((c) => (
           <div key={c.id} className="flex gap-4 rounded-2xl border border-line bg-white p-4">
-            <Link href={`/categories/${c.slug}`} className="relative size-24 shrink-0 overflow-hidden rounded-xl bg-surface" aria-label={c.name}>
-              <ProductImage src={(c.image && !isPlaceholderImage(c.image) ? c.image : photos.category.get(c.slug)) ?? CATEGORY_ART[c.slug]} alt="" fill sizes="96px" className="p-2" />
+            <Link href={`/categories/${c.slug}`} className="relative grid size-24 shrink-0 place-items-center overflow-hidden rounded-xl bg-white ring-1 ring-line" aria-label={c.name}>
+              {c.image && !isPlaceholderImage(c.image) ? (
+                <ProductImage src={c.image} alt="" fill sizes="96px" className="p-2" />
+              ) : photos.category.get(c.id) ? (
+                <ProductImage src={photos.category.get(c.id)} alt="" fill sizes="96px" className="p-2" />
+              ) : (
+                <span className="grid size-full place-items-center bg-gradient-to-br from-brand-700 to-brand-950 font-display text-2xl font-extrabold text-white">{c.name.slice(0, 2).toUpperCase()}</span>
+              )}
             </Link>
             <div className="min-w-0">
               <Link href={`/categories/${c.slug}`} className="text-lg font-bold hover:text-brand-700">

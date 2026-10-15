@@ -453,27 +453,24 @@ export async function incrementView(productId: string) {
 
 
 /**
- * A real product photo for each category and condition (featured products first), so category
- * tiles and collection cards show actual products instead of drawings once photos exist.
+ * A real product photo for each category (by id) and condition (by slug), featured products first,
+ * so category tiles and collection cards show actual products instead of drawings.
  */
 export const representativePhotos = cache(async () => {
-  const live = and(eq(products.status, "active"), isNull(products.deletedAt), eq(products.fulfilment, "stock"), sql`${photoExpr} IS NOT NULL`);
-  const [byCat, byCond] = await Promise.all([
-    db
-      .selectDistinctOn([categories.slug], { slug: categories.slug, url: photoExpr })
-      .from(products)
-      .innerJoin(categories, or(eq(categories.id, products.categoryId), eq(categories.id, products.subcategoryId)))
-      .where(live)
-      .orderBy(categories.slug, desc(products.isFeatured), desc(products.updatedAt)),
-    db
-      .selectDistinctOn([productConditions.slug], { slug: productConditions.slug, url: photoExpr })
-      .from(products)
-      .innerJoin(productConditions, eq(productConditions.id, products.conditionId))
-      .where(live)
-      .orderBy(productConditions.slug, desc(products.isFeatured), desc(products.updatedAt)),
-  ]);
-  return {
-    category: new Map(byCat.filter((r) => r.url).map((r) => [r.slug, r.url!])),
-    condition: new Map(byCond.filter((r) => r.url).map((r) => [r.slug, r.url!])),
-  };
+  const rows = await db
+    .select({ categoryId: products.categoryId, subcategoryId: products.subcategoryId, condition: productConditions.slug, url: photoExpr })
+    .from(products)
+    .innerJoin(productConditions, eq(productConditions.id, products.conditionId))
+    .where(and(visible, eq(products.fulfilment, "stock")))
+    .orderBy(desc(products.isFeatured), desc(products.updatedAt))
+    .limit(1000);
+  const category = new Map<string, string>();
+  const condition = new Map<string, string>();
+  for (const r of rows) {
+    if (!r.url) continue;
+    if (!category.has(r.categoryId)) category.set(r.categoryId, r.url);
+    if (r.subcategoryId && !category.has(r.subcategoryId)) category.set(r.subcategoryId, r.url);
+    if (!condition.has(r.condition)) condition.set(r.condition, r.url);
+  }
+  return { category, condition };
 });
