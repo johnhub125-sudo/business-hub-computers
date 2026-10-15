@@ -42,8 +42,9 @@ export default async function HomePage() {
   ]);
   const wished = me ? await wishlistProductIds(me.id) : [];
   // Floating 3D product in the hero: Featured products first, newest as a fallback.
-  const featured = storefront.heroShowcase ? await productRail("featured", undefined, 6).then((r) => (r.length ? r : productRail("new", undefined, 6))) : [];
-  const showcase = featured.map((p) => ({ id: p.id, name: p.name, slug: p.slug, image: p.image, price: p.salePrice ?? p.listPrice, brand: p.brand }));
+  const featured = storefront.heroShowcase ? await productRail("featured", undefined, 12).then((r) => (r.length ? r : productRail("new", undefined, 12))) : [];
+  // Products with a real photo lead the showcase.
+  const showcase = [...featured].sort((a, b) => Number(a.image.startsWith("/product-art/")) - Number(b.image.startsWith("/product-art/"))).slice(0, 6).map((p) => ({ id: p.id, name: p.name, slug: p.slug, image: p.image, price: p.salePrice ?? p.listPrice, brand: p.brand }));
 
   const render = (s: Section) => {
     switch (s.type) {

@@ -4,11 +4,12 @@ import Link from "next/link";
 import { ButtonLink } from "@/components/ui/button";
 import { SectionHeading, Stars } from "@/components/ui/misc";
 import { initials } from "@/lib/utils";
-import { categoryCounts, getNavigation, latestReviews, productRail } from "@/server/queries/catalog";
+import { categoryCounts, getNavigation, latestReviews, productRail, representativePhotos } from "@/server/queries/catalog";
 import { getBranches, getGallery, getProjects, getSiteContent, getTeam, getTestimonials } from "@/server/queries/content";
 import { getSettings } from "@/server/settings";
 import { CategoryTabs } from "./category-tabs";
 import { CATEGORY_ART, DynamicIcon } from "./icons";
+import { isPlaceholderImage } from "@/lib/product-kind";
 import { directionsUrl, MapEmbed } from "./map-embed";
 import { NewsletterForm } from "./newsletter-form";
 import { ProductRail } from "./product-card";
@@ -42,7 +43,7 @@ export async function TrustBar() {
 }
 
 export async function CategoriesSection({ s }: { s: Section }) {
-  const [nav, counts] = await Promise.all([getNavigation(), categoryCounts()]);
+  const [nav, counts, photos] = await Promise.all([getNavigation(), categoryCounts(), representativePhotos()]);
   return (
     <section>
       <SectionHeading title={s.title ?? "Shop by category"} subtitle={s.subtitle} href="/categories" />
@@ -50,7 +51,7 @@ export async function CategoriesSection({ s }: { s: Section }) {
         {nav.categories.map((c) => (
           <Link key={c.id} href={`/categories/${c.slug}`} className="group flex flex-col items-center rounded-2xl border border-line bg-white p-3 text-center transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-[var(--shadow-lift)] sm:p-4">
             <span className="relative mb-2 aspect-square w-full overflow-hidden rounded-xl bg-surface">
-              <ProductImage src={c.image ?? CATEGORY_ART[c.slug]} alt="" fill sizes="(max-width:1024px) 30vw, 15vw" className="p-2 transition group-hover:scale-105" />
+              <ProductImage src={(c.image && !isPlaceholderImage(c.image) ? c.image : photos.category.get(c.slug)) ?? CATEGORY_ART[c.slug]} alt="" fill sizes="(max-width:1024px) 30vw, 15vw" className="p-2 transition group-hover:scale-105" />
             </span>
             <span className="text-[13.5px] font-bold text-ink sm:text-sm">{c.name}</span>
             <span className="text-xs text-muted">{counts.get(c.id) ?? 0} products</span>
@@ -92,13 +93,14 @@ export async function RailSection({ s, wished }: { s: Section; wished: string[] 
 }
 
 export async function CollectionsSection({ s }: { s: Section }) {
+  const photos = await representativePhotos();
   return (
     <section>
       <SectionHeading title={s.title ?? "Brand new or UK used?"} subtitle={s.subtitle} />
       <div className="grid gap-4 md:grid-cols-2">
         {[
-          { href: "/brand-new", title: "Brand New", text: "Factory-sealed devices with full manufacturer warranty. The latest processors and designs.", img: "/images/catalog/laptop-1.svg", cls: "from-brand-700 to-brand-900" },
-          { href: "/uk-used", title: "UK Used", text: "Grade-A business-class machines, individually tested and certified — premium quality for less.", img: "/images/catalog/laptop-2.svg", cls: "from-accent-600 to-accent-800" },
+          { href: "/brand-new", title: "Brand New", text: "Factory-sealed devices with full manufacturer warranty. The latest processors and designs.", img: photos.condition.get("brand-new") ?? "/images/catalog/laptop-1.svg", cls: "from-brand-700 to-brand-900" },
+          { href: "/uk-used", title: "UK Used", text: "Grade-A business-class machines, individually tested and certified — premium quality for less.", img: photos.condition.get("uk-used") ?? "/images/catalog/laptop-2.svg", cls: "from-accent-600 to-accent-800" },
         ].map((c) => (
           <Link key={c.href} href={c.href} className={`group relative flex min-h-56 overflow-hidden rounded-3xl bg-gradient-to-br ${c.cls} p-6 text-white sm:p-8`}>
             <div className="relative z-10 max-w-[60%]">
@@ -108,9 +110,16 @@ export async function CollectionsSection({ s }: { s: Section }) {
                 Shop {c.title.toLowerCase()} <ArrowRight className="size-4" aria-hidden />
               </span>
             </div>
-            <div className="absolute -bottom-6 -right-6 size-60 opacity-95 transition duration-500 group-hover:scale-105 sm:size-72">
-              <Image src={c.img} alt="" fill unoptimized className="object-contain" />
-            </div>
+            {isPlaceholderImage(c.img) ? (
+              <div className="absolute -bottom-6 -right-6 size-60 opacity-95 transition duration-500 group-hover:scale-105 sm:size-72">
+                <Image src={c.img} alt="" fill unoptimized className="object-contain" />
+              </div>
+            ) : (
+              // A real product photo, framed like a print so its own background looks intentional.
+              <div className="absolute bottom-5 right-5 size-36 rotate-3 overflow-hidden rounded-2xl bg-white p-2 shadow-2xl ring-1 ring-white/40 transition duration-500 group-hover:rotate-0 group-hover:scale-105 sm:size-48">
+                <Image src={c.img} alt="" fill sizes="200px" className="object-contain p-2" />
+              </div>
+            )}
           </Link>
         ))}
       </div>

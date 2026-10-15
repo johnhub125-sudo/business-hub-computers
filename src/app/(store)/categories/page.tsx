@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CATEGORY_ART } from "@/components/store/icons";
+import { isPlaceholderImage } from "@/lib/product-kind";
 import { ProductImage } from "@/components/store/product-image";
 import { Breadcrumbs } from "@/components/ui/misc";
-import { categoryCounts, getNavigation } from "@/server/queries/catalog";
+import { categoryCounts, getNavigation, representativePhotos } from "@/server/queries/catalog";
 
 export const metadata: Metadata = { title: "All categories", alternates: { canonical: "/categories" } };
 
 export default async function CategoriesPage() {
-  const [nav, counts] = await Promise.all([getNavigation(), categoryCounts()]);
+  const [nav, counts, photos] = await Promise.all([getNavigation(), categoryCounts(), representativePhotos()]);
   return (
     <div className="container-page py-6">
       <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Categories" }]} />
@@ -17,7 +18,7 @@ export default async function CategoriesPage() {
         {nav.categories.map((c) => (
           <div key={c.id} className="flex gap-4 rounded-2xl border border-line bg-white p-4">
             <Link href={`/categories/${c.slug}`} className="relative size-24 shrink-0 overflow-hidden rounded-xl bg-surface" aria-label={c.name}>
-              <ProductImage src={c.image ?? CATEGORY_ART[c.slug]} alt="" fill sizes="96px" className="p-2" />
+              <ProductImage src={(c.image && !isPlaceholderImage(c.image) ? c.image : photos.category.get(c.slug)) ?? CATEGORY_ART[c.slug]} alt="" fill sizes="96px" className="p-2" />
             </Link>
             <div className="min-w-0">
               <Link href={`/categories/${c.slug}`} className="text-lg font-bold hover:text-brand-700">

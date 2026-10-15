@@ -451,3 +451,29 @@ export async function incrementView(productId: string) {
   await db.update(products).set({ viewCount: sql`${products.viewCount} + 1` }).where(eq(products.id, productId));
 }
 
+
+/**
+ * A real product photo for each category and condition (featured products first), so category
+ * tiles and collection cards show actual products instead of drawings once photos exist.
+ */
+export const representativePhotos = cache(async () => {
+  const live = and(eq(products.status, "active"), isNull(products.deletedAt), eq(products.fulfilment, "stock"), sql`${photoExpr} IS NOT NULL`);
+  const [byCat, byCond] = await Promise.all([
+    db
+      .selectDistinctOn([categories.slug], { slug: categories.slug, url: photoExpr })
+      .from(products)
+      .innerJoin(categories, or(eq(categories.id, products.categoryId), eq(categories.id, products.subcategoryId)))
+      .where(live)
+      .orderBy(categories.slug, desc(products.isFeatured), desc(products.updatedAt)),
+    db
+      .selectDistinctOn([productConditions.slug], { slug: productConditions.slug, url: photoExpr })
+      .from(products)
+      .innerJoin(productConditions, eq(productConditions.id, products.conditionId))
+      .where(live)
+      .orderBy(productConditions.slug, desc(products.isFeatured), desc(products.updatedAt)),
+  ]);
+  return {
+    category: new Map(byCat.filter((r) => r.url).map((r) => [r.slug, r.url!])),
+    condition: new Map(byCond.filter((r) => r.url).map((r) => [r.slug, r.url!])),
+  };
+});
