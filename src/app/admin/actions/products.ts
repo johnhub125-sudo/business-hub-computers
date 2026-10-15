@@ -4,14 +4,13 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
-import { parseCsv } from "@/lib/csv";
 import { audit } from "@/server/audit";
 import { db } from "@/server/db";
 import { productImages, productSerials, products } from "@/server/db/schema";
 import { runAction, UserError } from "@/server/errors";
 import { requirePermission } from "@/server/session";
 import { addPhotoFromLink, findPhotosBatch, photoSearchReady, photosWaiting, refindPhoto, requeueAllPhotos, keepGeneratedPicture } from "@/server/services/product-photos";
-import { parseProductSheet } from "@/server/services/product-sheet";
+import { parseProductCsv, parseProductSheet } from "@/server/services/product-sheet";
 import { bulkUpdate, importProducts, saveProduct } from "@/server/services/products";
 import { deleteFile, uploadFile } from "@/server/storage";
 
@@ -82,18 +81,18 @@ export async function importProductsAction(fd: FormData) {
     const file = fd.get("file");
     if (!(file instanceof File) || file.size === 0) throw new UserError("Choose the filled-in Excel template (or a CSV file).");
     if (file.size > 5 * 1024 * 1024) throw new UserError("The file must be under 5MB.");
-    const isExcel = /.xlsx$/i.test(file.name) || file.type.includes("spreadsheetml");
-    if (!isExcel && !/.csv$/i.test(file.name) && !file.type.includes("csv")) throw new UserError("Please upload an Excel (.xlsx) or CSV file. Older .xls files must be saved as .xlsx first.");
-    const rows = isExcel ? await parseProductSheet(await file.arrayBuffer()) : parseCsv(await file.text());
+    const isExcel = /.(xlsx|xlsm)$/i.test(file.name) || file.type.includes("spreadsheetml");
+    if (!isExcel && !/.csv$/i.test(file.name) && !file.type.includes("csv")) throw new UserError("Please upload an Excel (.xlsx) or CSV file. An old .xls file must first be saved in Excel as “Excel Workbook (.xlsx)”.");
+    const rows = isExcel ? await parseProductSheet(await file.arrayBuffer()) : parseProductCsv(await file.text());
     const dryRun = fd.get("dryRun") === "1";
     const res = await importProducts(rows, staff, dryRun);
-    if (res.ok && !dryRun) {
+    if (!dryRun && res.created + res.updated > 0) {
       revalidatePath("/admin/products");
       revalidatePath("/", "layout");
       // Start looking for real photos straight away; the admin screen and the daily job carry on.
       after(() => findPhotosBatch(2, staff.id).catch(() => {}));
     }
-    return { ...res, photos: res.ok && !dryRun ? { ready: photoSearchReady(), waiting: await photosWaiting() } : null };
+    return { ...res, photos: !dryRun && res.created + res.updated > 0 ? { ready: photoSearchReady(), waiting: await photosWaiting() } : null };
   });
 }
 

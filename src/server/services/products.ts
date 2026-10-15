@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BRAND_DEFAULTS } from "@/lib/brand";
 import { nairaToKobo } from "@/lib/money";
@@ -10,6 +10,8 @@ import { brands, categories, inventory, orderItems, productConditions, productIm
 import { UserError } from "../errors";
 import type { StaffContext } from "../session";
 import { adjustStock } from "./inventory";
+import { bestMatch, conditionFor, KIND_CATEGORY_HINTS, lenientAmount, lenientCount, lenientStatus, lenientYesNo, norm, parseSerials, parseSpecifications, tidyName } from "./import-tidy";
+import { productKind } from "@/lib/product-kind";
 
 const naira = z.union([z.string(), z.number()]).transform((v, ctx) => {
   const s = String(v).trim();
@@ -291,165 +293,257 @@ export const IMPORT_COLUMNS = ["sku", "name", "category", "subcategory", "brand"
 /** Friendly column names for error messages. */
 const IMPORT_LABELS: Record<string, string> = { sku: "SKU", name: "Product name", category: "Category", subcategory: "Subcategory", brand: "Brand", condition: "Condition", price: "Price", discount_price: "Discount price", purchase_price: "Cost price", stock: "Stock quantity", serial_numbers: "Serial numbers", dropship_partner: "Dropship partner", dropship_days: "Dropship delivery days", short_description: "Short description", description: "Full description", specifications: "Specifications", warranty: "Warranty", featured: "Featured", deal: "Deal", new_arrival: "New arrival", best_seller: "Best seller", status: "Status" };
 
-/** "Yes"/"No" cells. Blank stays undefined so an update never switches a flag off by accident. */
-const yesNo = z
-  .string()
-  .trim()
-  .optional()
-  .transform((v, ctx) => {
-    if (!v) return undefined;
-    if (/^(y|yes|true|1)$/i.test(v)) return true;
-    if (/^(n|no|false|0)$/i.test(v)) return false;
-    ctx.addIssue({ code: "custom", message: "use Yes or No" });
-    return z.NEVER;
-  });
+export { parseSerials, parseSpecifications } from "./import-tidy";
 
-/** "Processor: Core i5; RAM: 8GB" → { Processor: "Core i5", RAM: "8GB" } */
-export function parseSpecifications(text: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const part of text.split(/[;\n]+/)) {
-    const i = part.indexOf(":");
-    if (i < 1) continue;
-    const key = part.slice(0, i).trim().slice(0, 60);
-    const value = part.slice(i + 1).trim().slice(0, 300);
-    if (key && value && Object.keys(out).length < 40) out[key] = value;
-  }
-  return out;
-}
-
-const importRow = z.object({
-  // Optional: left blank, the SKU is generated (BHC-<category>-<number>).
-  sku: z.string().trim().max(64).regex(/^[A-Za-z0-9._-]*$/, "letters, numbers, . _ - only").optional().default(""),
-  name: z.string().trim().min(3).max(200),
-  brand: z.string().trim().max(60).optional().default(""),
-  category: z.string().trim().min(1, "required"),
-  subcategory: z.string().trim().max(80).optional().default(""),
-  condition: z.string().trim().min(1, "required"),
-  price: naira.refine((v) => v != null && v > 0, "price required"),
-  discount_price: naira.nullable().optional(),
-  purchase_price: naira.nullable().optional(),
-  // Blank = leave stock alone (new products start at 0). A number sets the stock to exactly that.
-  stock: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number().int().min(0).max(100000).optional()),
-  // One cell holding every unit's serial number, separated by commas. Their count is the quantity.
-  serial_numbers: z.string().max(40000).optional().default(""),
-  // Dropshipping: a partner name makes it a dropship product (supplied and shipped by that company).
-  dropship_partner: z.string().trim().max(120).optional().default(""),
-  dropship_days: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number().int().min(0).max(120).optional()),
-  short_description: z.string().trim().max(500).optional().default(""),
-  description: z.string().trim().max(20000).optional().default(""),
-  specifications: z.string().trim().max(4000).optional().default(""),
-  warranty: z.string().trim().max(200).optional().default(""),
-  featured: yesNo,
-  deal: yesNo,
-  new_arrival: yesNo,
-  best_seller: yesNo,
-  // Blank = Active, so an imported product appears in the shop straight away.
-  status: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .optional()
-    .transform((v) => v || "active")
-    .pipe(z.enum(["draft", "active", "archived"])),
-});
-
-/** "sn1, sn2 ,SN3" → ["SN1", "SN2", "SN3"]. Upper-cased so the same serial typed two ways is one unit. */
-export function parseSerials(text: string): string[] {
-  return text
-    .split(/[,;\n\r\t]+/)
-    .map((x) => x.trim().replace(/\s+/g, " ").toUpperCase())
-    .filter(Boolean);
-}
+/** A row after tidying: every value is already usable, so no row is refused for how it was typed. */
+type CleanRow = {
+  row: number;
+  sku: string;
+  name: string;
+  brand: string;
+  categoryId: string; // an existing id, or "new:<slug>" for a category this import creates
+  subcategoryId: string | null;
+  conditionId: string;
+  price: number; // kobo
+  discount_price: number | null;
+  purchase_price: number | null;
+  stock: number | undefined;
+  serials: string[];
+  dropship_partner: string;
+  dropship_days: number | undefined;
+  short_description: string;
+  description: string;
+  specs: Record<string, string>;
+  warranty: string;
+  featured: boolean | undefined;
+  deal: boolean | undefined;
+  new_arrival: boolean | undefined;
+  best_seller: boolean | undefined;
+  status: "active" | "draft" | "archived";
+  brandKey: string | null;
+};
 
 /** "Power Station" → "POW" */
 const categoryCode = (name: string) => (name.replace(/[^A-Za-z]/g, "").slice(0, 3) || "GEN").toUpperCase();
 
+/**
+ * `errors` lists rows that could not be imported at all (only rows without a product name);
+ * `notes` explains every automatic correction. `ok` is false only when nothing can be imported.
+ */
 export type ImportResult = { ok: boolean; errors: { row: number; message: string }[]; notes: string[]; count: number; created: number; updated: number };
 
-export async function importProducts(rows: Record<string, string>[], staff: Pick<StaffContext, "id" | "email" | "roleLabel">, dryRun: boolean): Promise<ImportResult> {
-  if (!rows.length) throw new UserError("The file has no product rows.");
-  if (rows.length > 2000) throw new UserError("Import at most 2,000 rows at a time.");
-  const [cats, conds, brs] = await Promise.all([db.select().from(categories), db.select().from(productConditions), db.select().from(brands)]);
-  const find = <T extends { name: string; slug: string }>(list: T[], v: string) => list.find((x) => x.slug === slugify(v) || x.name.toLowerCase() === v.toLowerCase());
+const MAX_IMPORT_ROWS = 2000;
+const clip = (s: string | undefined, n: number) => (s ?? "").replace(/\s+$/g, "").trim().slice(0, n);
+
+export async function importProducts(input: Record<string, string>[], staff: Pick<StaffContext, "id" | "email" | "roleLabel">, dryRun: boolean): Promise<ImportResult> {
+  if (!input.length) throw new UserError("The file has no product rows. Put one product on each row under the headings.");
+  const rows = input.slice(0, MAX_IMPORT_ROWS);
+  const [cats, conds, brs] = await Promise.all([db.select().from(categories), db.select().from(productConditions).orderBy(asc(productConditions.sortOrder)), db.select().from(brands)]);
   const errors: { row: number; message: string }[] = [];
-  const parsed: (z.infer<typeof importRow> & { categoryId: string; subcategoryId: string | null; conditionId: string; brandKey: string | null; specs: Record<string, string>; serials: string[] })[] = [];
-  const serialRows = new Map<string, number>(); // serial → first row it appears on
+  const fixes: string[] = []; // "Row 4: …" — what was corrected automatically
+  const fix = (row: number, message: string) => fixes.push(`Row ${row}: ${message}`);
+  const topCats = cats.filter((c) => !c.parentId);
+  const newCategories = new Map<string, string>(); // slug → name
   const newBrands = new Map<string, string>(); // slug → name as typed
+  const defaultCondition = conditionFor(conds, "brand new") ?? conds[0];
+  if (!defaultCondition) throw new UserError("Add at least one product condition (Settings → Catalogue) before importing.");
+
+  /** Category for a row: typed name (typos forgiven), a subcategory's parent, a guess from the product name, or a new category. */
+  const placeCategory = (row: number, typed: string, typedSub: string, name: string): { categoryId: string; subcategoryId: string | null; label: string } => {
+    if (typed) {
+      const top = bestMatch(topCats, typed);
+      if (top) {
+        if (norm(top.name) !== norm(typed)) fix(row, `category “${typed}” read as “${top.name}”`);
+        return { categoryId: top.id, subcategoryId: null, label: top.name };
+      }
+      const sub = bestMatch(cats.filter((c) => c.parentId), typed);
+      if (sub) {
+        const parent = topCats.find((c) => c.id === sub.parentId)!;
+        fix(row, `“${typed}” is a subcategory — placed under ${parent.name} › ${sub.name}`);
+        return { categoryId: parent.id, subcategoryId: sub.id, label: parent.name };
+      }
+      const name2 = tidyName(typed).slice(0, 80);
+      const slug = slugify(name2);
+      if (slug) {
+        if (!newCategories.has(slug)) newCategories.set(slug, name2);
+        return { categoryId: `new:${slug}`, subcategoryId: null, label: name2 };
+      }
+    }
+    if (typedSub) {
+      const sub = bestMatch(cats.filter((c) => c.parentId), typedSub);
+      if (sub) {
+        const parent = topCats.find((c) => c.id === sub.parentId)!;
+        fix(row, `no category given — placed under ${parent.name} (from subcategory ${sub.name})`);
+        return { categoryId: parent.id, subcategoryId: sub.id, label: parent.name };
+      }
+    }
+    const hint = KIND_CATEGORY_HINTS[productKind({ name })];
+    const guess = hint && topCats.find((c) => hint.test(c.name.toLowerCase()));
+    if (guess) {
+      fix(row, `no category given — placed under ${guess.name}`);
+      return { categoryId: guess.id, subcategoryId: null, label: guess.name };
+    }
+    const others = topCats.find((c) => /^others?$|^general$|^miscellaneous$/i.test(c.name));
+    fix(row, `no category given — placed under ${others?.name ?? "Others"}`);
+    if (others) return { categoryId: others.id, subcategoryId: null, label: others.name };
+    newCategories.set("others", "Others");
+    return { categoryId: "new:others", subcategoryId: null, label: "Others" };
+  };
+
+  const clean: CleanRow[] = [];
   rows.forEach((r, i) => {
     const row = Number(r.__row) || i + 2;
-    const res = importRow.safeParse(r);
-    const fail = (message: string) => {
-      errors.push({ row, message });
-      return undefined;
-    };
-    if (!res.success) {
-      fail(res.error.issues.map((x) => `${IMPORT_LABELS[String(x.path[0])] ?? x.path.join(".")}: ${x.message}`).join("; "));
-      // Still report an unknown category/condition, so one check shows everything wrong with the row.
-      if (r.category?.trim() && !find(cats, r.category.trim())) fail(`Unknown category “${r.category.trim()}” — choose one from the dropdown`);
-      if (r.condition?.trim() && !find(conds, r.condition.trim())) fail(`Unknown condition “${r.condition.trim()}” — choose one from the dropdown`);
+    const name = clip(r.name, 200).replace(/\s+/g, " ");
+    if (!name) {
+      // A row with details but no name cannot become a product.
+      if (Object.keys(r).some((k) => k !== "__row" && r[k]?.trim())) errors.push({ row, message: "skipped — no product name" });
       return;
     }
-    const d = res.data;
-    const cat = find(cats.filter((c) => !c.parentId), d.category) ?? find(cats, d.category) ?? fail(`Unknown category “${d.category}” — choose one from the dropdown`);
-    const cond = find(conds, d.condition) ?? fail(`Unknown condition “${d.condition}” — choose one from the dropdown`);
-    let subcategoryId: string | null = null;
-    let ok = Boolean(cat && cond);
-    if (d.subcategory && cat) {
-      const sub = find(cats.filter((c) => c.parentId === cat.id), d.subcategory) ?? fail(`“${d.subcategory}” is not a subcategory of ${cat.name}`);
+    if ((r.name ?? "").trim().length > 200) fix(row, "product name shortened to 200 characters");
+
+    const place = placeCategory(row, clip(r.category, 80), clip(r.subcategory, 80), name);
+    let subcategoryId = place.subcategoryId;
+    if (r.subcategory?.trim() && !subcategoryId) {
+      const sub = place.categoryId.startsWith("new:") ? undefined : bestMatch(cats.filter((c) => c.parentId === place.categoryId), r.subcategory);
       if (sub) subcategoryId = sub.id;
-      else ok = false;
+      else fix(row, `subcategory “${r.subcategory.trim()}” is not under ${place.label} — left out`);
     }
-    if (d.discount_price != null && d.discount_price > d.price!) {
-      fail("Discount price is above the price");
-      ok = false;
+
+    let cond = r.condition?.trim() ? conditionFor(conds, r.condition) : undefined;
+    if (!cond) {
+      if (r.condition?.trim()) fix(row, `condition “${r.condition.trim()}” not recognised — set to ${defaultCondition.name}`);
+      cond = defaultCondition;
+    } else if (norm(cond.name) !== norm(r.condition ?? "")) fix(row, `condition “${r.condition!.trim()}” read as ${cond.name}`);
+
+    let status = lenientStatus(r.status);
+    let price = lenientAmount(r.price);
+    if (!price) {
+      fix(row, r.price?.trim() ? `price “${r.price.trim()}” not readable — saved as Draft (hidden) until a price is added` : "no price — saved as Draft (hidden) until a price is added");
+      price = 0;
+      status = "draft";
     }
-    const serials = parseSerials(d.serial_numbers);
-    if (serials.length) {
-      const repeated = [...new Set(serials.filter((x, n) => serials.indexOf(x) !== n))];
-      const bad = serials.filter((x) => x.length > 64);
-      if (repeated.length) fail(`Serial numbers: ${repeated.slice(0, 5).join(", ")} appear${repeated.length === 1 ? "s" : ""} more than once in this cell`);
-      if (bad.length) fail(`Serial numbers: “${bad[0].slice(0, 30)}…” is too long — check that the serial numbers are separated by commas`);
-      if (serials.length > 5000) fail("Serial numbers: at most 5,000 in one cell");
-      if (d.stock !== undefined && d.stock !== serials.length) fail(`Stock quantity says ${d.stock} but there are ${serials.length} serial numbers — leave Stock quantity blank and the serial numbers are counted for you`);
-      const elsewhere = [...new Set(serials)].filter((x) => serialRows.has(x));
-      if (elsewhere.length) fail(`Serial number ${elsewhere[0]} is also on row ${serialRows.get(elsewhere[0])}`);
-      for (const x of serials) if (!serialRows.has(x)) serialRows.set(x, row);
-      if (repeated.length || bad.length || serials.length > 5000 || elsewhere.length || (d.stock !== undefined && d.stock !== serials.length)) ok = false;
+    let discount = lenientAmount(r.discount_price);
+    if (r.discount_price?.trim() && discount == null) fix(row, `discount “${r.discount_price.trim()}” not readable — left out`);
+    if (discount != null && price > 0) {
+      if (discount > price) {
+        fix(row, "discount price was higher than the price — the two were swapped");
+        [price, discount] = [discount, price];
+      } else if (discount === price || discount === 0) discount = null;
+    } else if (price === 0) discount = null;
+    const purchase = lenientAmount(r.purchase_price);
+    if (r.purchase_price?.trim() && purchase == null) fix(row, `cost price “${r.purchase_price.trim()}” not readable — left out`);
+
+    let stock = r.stock?.trim() ? (lenientCount(r.stock) ?? undefined) : undefined;
+    if (r.stock?.trim() && stock === undefined) fix(row, `stock “${r.stock.trim()}” not readable — stock left unchanged`);
+    if (stock !== undefined && stock > 100000) {
+      fix(row, `stock ${stock} looks wrong — stock left unchanged`);
+      stock = undefined;
     }
+
+    const typedSerials = parseSerials(r.serial_numbers ?? "");
+    const serials = [...new Set(typedSerials)];
+    if (serials.length < typedSerials.length) fix(row, `${typedSerials.length - serials.length} repeated serial number(s) counted once`);
+    if (serials.length && stock !== undefined && stock !== serials.length) fix(row, `stock ${stock} replaced by the ${serials.length} serial numbers`);
+    if (serials.length) stock = undefined;
+
+    const yes = (k: string) => {
+      const v = lenientYesNo(r[k]);
+      if (r[k]?.trim() && v === undefined) fix(row, `“${r[k].trim()}” in ${IMPORT_LABELS[k]} not understood — left as it was`);
+      return v;
+    };
+
     let brandKey: string | null = null;
-    if (d.brand) {
-      const existing = find(brs, d.brand);
-      brandKey = existing?.slug ?? (slugify(d.brand) || null);
-      if (!brandKey) {
-        fail(`Brand “${d.brand}” is not a usable name`);
-        ok = false;
-      } else if (!existing && !newBrands.has(brandKey)) newBrands.set(brandKey, d.brand);
+    const brandTyped = clip(r.brand, 60);
+    if (brandTyped) {
+      const existing = bestMatch(brs, brandTyped, 0.85);
+      brandKey = existing?.slug ?? (slugify(brandTyped) || null);
+      if (brandKey && !existing && !newBrands.has(brandKey)) newBrands.set(brandKey, tidyName(brandTyped));
     }
-    if (ok && cat && cond) parsed.push({ ...d, categoryId: cat.id, subcategoryId, conditionId: cond.id, brandKey, specs: parseSpecifications(d.specifications), serials });
+
+    const days = r.dropship_days?.trim() ? lenientCount(r.dropship_days) : null;
+    clean.push({
+      row,
+      sku: clip(r.sku, 64).toUpperCase().replace(/\s+/g, "-").replace(/[^A-Z0-9._-]/g, ""),
+      name,
+      brand: brandTyped,
+      categoryId: place.categoryId,
+      subcategoryId,
+      conditionId: cond.id,
+      price: Math.round(price * 100),
+      discount_price: discount != null ? Math.round(discount * 100) : null,
+      purchase_price: purchase != null ? Math.round(purchase * 100) : null,
+      stock,
+      serials,
+      dropship_partner: clip(r.dropship_partner, 120),
+      dropship_days: days != null && days <= 365 ? days : undefined,
+      short_description: clip(r.short_description, 500),
+      description: clip(r.description, 20000),
+      specs: parseSpecifications(clip(r.specifications, 4000)),
+      warranty: clip(r.warranty, 200),
+      featured: yes("featured"),
+      deal: yes("deal"),
+      new_arrival: yes("new_arrival"),
+      best_seller: yes("best_seller"),
+      status,
+      brandKey,
+    });
   });
-  const dupes = parsed.filter((p) => p.sku).map((p) => p.sku.toUpperCase()).filter((s, i, a) => a.indexOf(s) !== i);
-  if (dupes.length) errors.push({ row: 0, message: `The same SKU appears more than once in the file: ${[...new Set(dupes)].join(", ")}` });
-  // Without a SKU, a product is identified by its name and condition.
+
+  // The same product on several rows (same SKU, or same name and condition) is combined into one.
   const nameKey = (name: string, conditionId: string) => `${name.trim().toLowerCase()}|${conditionId}`;
-  const sameName = parsed.filter((p) => !p.sku).map((p) => nameKey(p.name, p.conditionId)).filter((s, i, a) => a.indexOf(s) !== i);
-  if (sameName.length) errors.push({ row: 0, message: `The same product (name and condition) appears more than once: ${[...new Set(sameName)].map((k) => k.split("|")[0]).join(", ")}` });
-  const notes = newBrands.size ? [`${newBrands.size} new brand(s) will be created: ${[...newBrands.values()].join(", ")}`] : [];
+  const keyOf = (p: CleanRow) => (p.sku ? `sku:${p.sku}` : `name:${nameKey(p.name, p.conditionId)}`);
+  const merged = new Map<string, CleanRow>();
+  for (const p of clean) {
+    const k = keyOf(p);
+    const first = merged.get(k);
+    if (!first) {
+      merged.set(k, p);
+      continue;
+    }
+    fix(p.row, `same product as row ${first.row} — combined into one`);
+    const stock = first.stock !== undefined || p.stock !== undefined ? (first.stock ?? 0) + (p.stock ?? 0) : undefined;
+    const serials = [...new Set([...first.serials, ...p.serials])];
+    const filled = Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== "" && v !== null && !(typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length)));
+    merged.set(k, { ...first, ...filled, row: first.row, stock: serials.length ? undefined : stock, serials, price: p.price || first.price, status: p.price ? p.status : first.status } as CleanRow);
+  }
+  // A serial number belongs to one unit: if it appears on two products, the first keeps it.
+  const owner = new Map<string, number>();
+  for (const p of merged.values()) {
+    const kept = p.serials.filter((s) => !owner.has(s));
+    if (kept.length < p.serials.length) fix(p.row, `${p.serials.length - kept.length} serial number(s) already used on another row were left out`);
+    for (const s of kept) owner.set(s, p.row);
+    p.serials = kept;
+  }
+  const parsed = [...merged.values()];
+
+  const notes: string[] = [];
+  if (input.length > MAX_IMPORT_ROWS) notes.push(`Only the first ${MAX_IMPORT_ROWS.toLocaleString()} rows were read — import the rest in a second file.`);
+  if (newCategories.size) notes.push(`New categor${newCategories.size === 1 ? "y" : "ies"} ${dryRun ? "will be" : "were"} created: ${[...newCategories.values()].join(", ")}.`);
+  if (newBrands.size) notes.push(`${newBrands.size} new brand(s) ${dryRun ? "will be" : "were"} created: ${[...newBrands.values()].join(", ")}.`);
   const withSerials = parsed.filter((p) => p.serials.length);
-  if (withSerials.length) notes.push(`${withSerials.reduce((n, p) => n + p.serials.length, 0)} serial number(s) on ${withSerials.length} product(s) will be counted as stock.`);
-  if (errors.length || dryRun) return { ok: errors.length === 0, errors, notes, count: parsed.length, created: 0, updated: 0 };
+  if (withSerials.length) notes.push(`${withSerials.reduce((n, p) => n + p.serials.length, 0)} serial number(s) on ${withSerials.length} product(s) counted as stock.`);
+  if (fixes.length) notes.push(`${fixes.length} correction(s) made automatically:`, ...fixes.slice(0, 200), ...(fixes.length > 200 ? [`…and ${fixes.length - 200} more.`] : []));
+  if (!parsed.length) return { ok: false, errors: errors.length ? errors : [{ row: 0, message: "No products found. Put the product name in a column headed “Product name”." }], notes, count: 0, created: 0, updated: 0 };
+  if (dryRun) return { ok: true, errors, notes, count: parsed.length, created: 0, updated: 0 };
 
   let created = 0;
   let updated = 0;
   let stockSet = 0;
   let serialsAdded = 0;
   let demoRemoved = 0;
-  notes.length = 0;
   await db.transaction(async (tx) => {
     const brandIds = new Map(brs.map((b) => [b.slug, b.id]));
     for (const [slug, name] of newBrands) {
       const [b] = await tx.insert(brands).values({ name, slug }).onConflictDoUpdate({ target: brands.slug, set: { slug } }).returning({ id: brands.id });
       brandIds.set(slug, b.id);
     }
+    // Categories typed in the file that the shop did not have yet.
+    const newCatIds = new Map<string, string>();
+    for (const [slug, name] of newCategories) {
+      const [c] = await tx.insert(categories).values({ name, slug }).onConflictDoUpdate({ target: categories.slug, set: { slug } }).returning({ id: categories.id });
+      newCatIds.set(slug, c.id);
+    }
+    const catId = (id: string) => (id.startsWith("new:") ? newCatIds.get(id.slice(4))! : id);
     const current = await tx.select({ id: products.id, sku: products.sku, name: products.name, conditionId: products.conditionId, deletedAt: products.deletedAt }).from(products);
     const bySku = new Map(current.map((c) => [c.sku.toUpperCase(), c]));
     const byName = new Map(current.filter((c) => !c.deletedAt).map((c) => [nameKey(c.name, c.conditionId), c]));
@@ -458,24 +552,24 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
     const generated = new RegExp(`^${prefix}-[A-Z]+-(\\d+)$`);
     let nextNumber = Math.max(0, ...current.map((c) => Number(generated.exec(c.sku.toUpperCase())?.[1] ?? 0))) + 1;
     const newSku = (categoryId: string) => {
-      const top = cats.find((c) => c.id === categoryId);
+      const top = cats.find((c) => c.id === categoryId) ?? { name: newCategories.get(categoryId.slice(4)) ?? "" };
       for (;;) {
         const sku = `${prefix}-${categoryCode(top?.name ?? "")}-${String(nextNumber++).padStart(4, "0")}`;
         if (!bySku.has(sku)) return sku;
       }
     };
     for (const p of parsed) {
-      const existing = p.sku ? bySku.get(p.sku.toUpperCase()) : byName.get(nameKey(p.name, p.conditionId));
+      const existing = (p.sku ? bySku.get(p.sku.toUpperCase()) : undefined) ?? byName.get(nameKey(p.name, p.conditionId));
       const sku = existing?.sku ?? (p.sku || newSku(p.categoryId));
       bySku.set(sku.toUpperCase(), existing ?? { id: "", sku, name: p.name, conditionId: p.conditionId, deletedAt: null });
       const flags = { isFeatured: p.featured, isDeal: p.deal, isNewArrival: p.new_arrival, isBestSeller: p.best_seller };
       const base = {
         name: p.name,
         brandId: p.brandKey ? (brandIds.get(p.brandKey) ?? null) : null,
-        categoryId: p.categoryId,
+        categoryId: catId(p.categoryId),
         subcategoryId: p.subcategoryId,
         conditionId: p.conditionId,
-        price: p.price!,
+        price: p.price,
         discountPrice: p.discount_price ?? null,
         purchasePrice: p.purchase_price ?? 0,
         shortDescription: p.short_description || null,
@@ -486,8 +580,15 @@ export async function importProducts(rows: Record<string, string>[], staff: Pick
         updatedAt: new Date(),
       };
       if (existing) {
-        // Blank cells never wipe specifications or switch flags off on an existing product.
+        // Blank cells never wipe details, prices or flags of an existing product.
         const keep = Object.fromEntries(Object.entries(flags).filter(([, v]) => v !== undefined));
+        if (!p.brandKey) delete (base as Partial<typeof base>).brandId;
+        if (!p.subcategoryId) delete (base as Partial<typeof base>).subcategoryId;
+        if (!p.short_description) delete (base as Partial<typeof base>).shortDescription;
+        if (!p.description) delete (base as Partial<typeof base>).description;
+        if (!p.warranty) delete (base as Partial<typeof base>).warranty;
+        if (p.purchase_price == null) delete (base as Partial<typeof base>).purchasePrice;
+        if (!p.price) for (const k of ["price", "discountPrice", "status"] as const) delete (base as Partial<typeof base>)[k];
         await tx
           .update(products)
           .set({ ...base, ...keep, ...(Object.keys(p.specs).length ? { specifications: p.specs } : {}) })

@@ -12,7 +12,8 @@ export function toCsv(rows: Record<string, unknown>[], columns?: string[]) {
   return "﻿" + [cols.join(","), ...rows.map((r) => cols.map((c) => esc(r[c])).join(","))].join("\r\n");
 }
 
-export function parseCsv(text: string): Record<string, string>[] {
+/** CSV text → rows of cells. */
+export function parseCsvGrid(text: string): string[][] {
   const src = text.replace(/^﻿/, "");
   const rows: string[][] = [];
   let row: string[] = [];
@@ -42,7 +43,11 @@ export function parseCsv(text: string): Record<string, string>[] {
     row.push(field);
     rows.push(row);
   }
-  const [header, ...data] = rows.filter((r) => r.some((c) => c.trim() !== ""));
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+export function parseCsv(text: string): Record<string, string>[] {
+  const [header, ...data] = parseCsvGrid(text);
   if (!header) return [];
   const keys = header.map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
   return data.map((r) => Object.fromEntries(keys.map((k, i) => [k, (r[i] ?? "").trim()])));

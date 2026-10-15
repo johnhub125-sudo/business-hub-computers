@@ -13,7 +13,7 @@ type Result = { ok: boolean; errors: { row: number; message: string }[]; notes: 
 
 /**
  * Add many products at once: download the Excel template, fill it, check it, import it.
- * The file is checked in full before anything is saved; every product gets its picture automatically.
+ * Mistakes in the file are corrected automatically and listed; only rows without a product name are skipped.
  */
 export function ProductImport({ onClose, className }: { onClose?: () => void; className?: string }) {
   const router = useRouter();
@@ -36,7 +36,7 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
       }
       setResult(r.data);
       setChecked(dryRun && r.data.ok);
-      if (!dryRun && r.data.ok) {
+      if (!dryRun && r.data.created + r.data.updated > 0) {
         setDone(true);
         toast.success(`Imported: ${r.data.created} new, ${r.data.updated} updated`);
         router.refresh();
@@ -113,33 +113,29 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
       {done && result?.photos && (result.photos.waiting > 0 || !result.photos.ready) && <PhotoFinder key={result.created + result.updated} waiting={result.photos.waiting} ready={result.photos.ready} autoStart className="mt-4" />}
 
       {result && (
-        <div className={cn("mt-4 rounded-xl p-3 text-sm", result.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700")} role="status">
-          {result.ok ? (
-            <>
-              <p className="flex items-center gap-2 font-semibold">
-                <CheckCircle2 className="size-4" aria-hidden />
-                {done ? `Done — ${result.created} new product${result.created === 1 ? "" : "s"} added and ${result.updated} updated. They are live in the shop with their pictures.` : `${result.count} row${result.count === 1 ? " is" : "s are"} valid and ready to import.`}
-              </p>
-              {result.notes.map((n) => (
-                <p key={n} className="mt-1 pl-6">
+        <div className={cn("mt-4 rounded-xl p-3 text-sm", result.ok ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900")} role="status">
+          <p className="flex items-center gap-2 font-semibold">
+            <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+            {!result.ok
+              ? "No products could be read from this file."
+              : done
+                ? `Done — ${result.created} new product${result.created === 1 ? "" : "s"} added and ${result.updated} updated. They are live in the shop with their pictures.`
+                : `${result.count} product${result.count === 1 ? "" : "s"} ready to import. Press Import to save them.`}
+          </p>
+          {result.errors.length > 0 && (
+            <p className="mt-1 pl-6">
+              {result.errors.length} row{result.errors.length === 1 ? "" : "s"} skipped: {result.errors.slice(0, 20).map((e) => (e.row ? `row ${e.row}` : e.message)).join(", ")}
+              {result.errors.length > 20 ? "…" : ""} {result.errors[0]?.row ? "(no product name)" : ""}
+            </p>
+          )}
+          {result.notes.length > 0 && (
+            <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pl-6 text-[13px]">
+              {result.notes.map((n, i) => (
+                <li key={i} className={n.startsWith("Row ") ? "text-emerald-900/80" : "font-medium"}>
                   {n}
-                </p>
+                </li>
               ))}
-            </>
-          ) : (
-            <>
-              <p className="font-semibold">
-                {result.errors.length} problem{result.errors.length === 1 ? "" : "s"} found. Fix {result.errors.length === 1 ? "it" : "them"} in the file and upload it again — nothing was saved.
-              </p>
-              <ul className="mt-1 max-h-56 list-disc space-y-0.5 overflow-y-auto pl-5">
-                {result.errors.map((e, i) => (
-                  <li key={i}>
-                    {e.row ? `Row ${e.row}: ` : ""}
-                    {e.message}
-                  </li>
-                ))}
-              </ul>
-            </>
+            </ul>
           )}
         </div>
       )}

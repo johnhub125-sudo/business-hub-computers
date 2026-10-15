@@ -7,7 +7,7 @@ import { db } from "@/server/db";
 import { brands, categories, inventory, productConditions, productSerials, productVariants, products } from "@/server/db/schema";
 import { productArtUrl, productImage, readArtSegment } from "@/server/product-art-url";
 import { listProducts } from "@/server/queries/catalog";
-import { buildProductTemplate, parseProductSheet, SHEET_COLUMNS } from "@/server/services/product-sheet";
+import { buildProductTemplate, parseProductCsv, parseProductSheet, SHEET_COLUMNS } from "@/server/services/product-sheet";
 import { importProducts } from "@/server/services/products";
 import { makeUser, resetDb } from "./support/fixtures";
 
@@ -126,20 +126,54 @@ describe("Excel product import", () => {
     expect((await db.select().from(products))[0].sku).toBe("MY-CODE-1");
   });
 
-  it("reports every problem with its Excel row number and saves nothing", async () => {
+  it("corrects typing mistakes instead of refusing the file", async () => {
     const rows = await fillTemplate([
-      { name: "HP ProBook 440", category: "Computers", condition: "Brand New", price: 400000 },
-      { name: "X", category: "Phones", condition: "Brand New", price: 0 },
+      { name: "HP ProBook 440", category: "Computrs", condition: "new", price: "₦400,000" },
       { name: "Canon Printer", category: "Printers", subcategory: "Business Laptops", condition: "Brand New", price: 100000, discount_price: 150000, featured: "maybe" },
-      { name: "hp probook 440", category: "Computers", condition: "Brand New", price: 410000 },
+      { name: "hp probook 440", category: "Computers", condition: "Brand New", price: 410000, stock: "3 pcs" },
+      { name: "Samsung Galaxy A15", category: "Phones", condition: "tokunbo", price: "250k" },
+      { category: "Computers", price: 1000 },
+      { name: "Mystery item" },
     ]);
+    const check = await importProducts(rows, staff, true);
+    expect(check).toMatchObject({ ok: true, count: 4 });
+    expect(check.errors).toEqual([{ row: 6, message: "skipped — no product name" }]);
     const res = await importProducts(rows, staff, false);
-    expect(res.ok).toBe(false);
-    expect(res.errors.map((e) => e.row)).toEqual(expect.arrayContaining([3, 4]));
-    expect(res.errors.some((e) => e.row === 2)).toBe(false);
-    expect(res.errors.some((e) => /Unknown category “Phones”/.test(e.message))).toBe(true);
-    expect(res.errors.some((e) => /appears more than once/.test(e.message))).toBe(true);
-    expect(await db.select().from(products)).toHaveLength(0);
+    expect(res).toMatchObject({ ok: true, created: 4 });
+    const all = await db.select().from(products);
+    const by = (n: string) => all.find((p) => p.name.toLowerCase() === n.toLowerCase())!;
+    const cats = await db.select().from(categories);
+    const conds = await db.select().from(productConditions);
+    const cat = (id: string) => cats.find((c) => c.id === id)!.name;
+    const cond = (id: string) => conds.find((c) => c.id === id)!.name;
+    expect(cat(by("HP ProBook 440").categoryId)).toBe("Computers");
+    expect(by("HP ProBook 440").price).toBe(41_000_000); // the two rows were combined; the later price wins
+    expect(await stockOf(by("HP ProBook 440").id)).toBe(3);
+    expect(by("Canon Printer")).toMatchObject({ price: 15_000_000, discountPrice: 10_000_000, subcategoryId: null, isFeatured: false });
+    expect(cat(by("Samsung Galaxy A15").categoryId)).toBe("Phones"); // created
+    expect(cond(by("Samsung Galaxy A15").conditionId)).toBe("UK Used");
+    expect(by("Samsung Galaxy A15").price).toBe(25_000_000);
+    expect(by("Mystery item")).toMatchObject({ status: "draft", price: 0 });
+    expect(res.notes.join(" ")).toMatch(/read as “Computers”/);
+  });
+
+  it("reads a sheet laid out differently: own headings, a title row, another worksheet, and CSV", async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Stock list");
+    ws.addRow(["BUSINESS HUB STOCK — OCTOBER"]);
+    ws.addRow([]);
+    ws.addRow(["S/No", "Item", "Make", "Qty", "Selling Price (N)", "Grade", "Serial No."]);
+    ws.addRow([1, "Dell Latitude 5420", "Dell", 2, "380,000", "UK used", "ABC1 ABC2"]);
+    ws.addRow([2, "Logitech Mouse M90", "Logitech", 10, 7500, "", ""]);
+    const rows = await parseProductSheet((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+    expect(rows[0]).toMatchObject({ name: "Dell Latitude 5420", brand: "Dell", stock: "2", price: "380,000", condition: "UK used", serial_numbers: "ABC1 ABC2" });
+    expect((await importProducts(rows, staff, false)).created).toBe(2);
+    const dell = (await db.select().from(products)).find((p) => p.name.startsWith("Dell"))!;
+    expect(dell.price).toBe(38_000_000);
+    expect(await stockOf(dell.id)).toBe(2);
+
+    const csv = parseProductCsv('Product,Price,Quantity\r\nHP 250 G8,"₦310,000",4\r\n');
+    expect(csv).toEqual([{ name: "HP 250 G8", price: "₦310,000", stock: "4", __row: "2" }]);
   });
 });
 
@@ -203,14 +237,20 @@ describe("Serial numbers in the product import", () => {
     expect(res.notes.join(" ")).toContain("already recorded");
   });
 
-  it("refuses repeated serial numbers and a stock quantity that disagrees", async () => {
-    const twice = await importProducts(await fillTemplate([{ ...row, serial_numbers: "A1, A2, a1" }]), staff, true);
-    expect(twice.ok).toBe(false);
-    const mismatch = await importProducts(await fillTemplate([{ ...row, stock: 5, serial_numbers: "A1, A2" }]), staff, true);
-    expect(mismatch.errors[0].message).toContain("2 serial numbers");
-    const shared = await importProducts(await fillTemplate([{ ...row, serial_numbers: "A1" }, { ...row, condition: "Brand New", serial_numbers: "A1" }]), staff, true);
-    expect(shared.errors[0].message).toContain("also on row");
-    expect((await importProducts(await fillTemplate([{ ...row, stock: 2, serial_numbers: "A1, A2" }]), staff, true)).ok).toBe(true);
+  it("tidies serial numbers: repeats counted once, the count beats Stock quantity, one unit per serial", async () => {
+    const res = await importProducts(
+      await fillTemplate([
+        { ...row, stock: 5, serial_numbers: "A1, A2, a1" },
+        { ...row, condition: "Brand New", serial_numbers: "A2, B1" },
+      ]),
+      staff,
+      false,
+    );
+    expect(res).toMatchObject({ ok: true, created: 2 });
+    const all = await db.select().from(products);
+    const stocks = await Promise.all(all.map((p) => stockOf(p.id)));
+    expect(stocks.sort()).toEqual([1, 2]); // A1, A2 on the first; only B1 on the second
+    expect(res.notes.join(" ")).toMatch(/repeated serial/);
   });
 });
 

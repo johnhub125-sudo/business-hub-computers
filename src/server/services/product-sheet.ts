@@ -4,6 +4,8 @@ import { asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { brands, categories, productConditions, productSerials, products } from "../db/schema";
 import { UserError } from "../errors";
+import { parseCsvGrid } from "@/lib/csv";
+import { gridToRows } from "./import-tidy";
 
 /**
  * The Excel template for adding many products at once (Admin → Products → Add product).
@@ -40,21 +42,6 @@ export const SHEET_COLUMNS = TEMPLATE_COLUMNS;
 const MAX_ROWS = 1000;
 const NAVY = "FF1B2A7B";
 const RED = "FFD62828";
-const norm = (s: string) => s.toLowerCase().replace(/\(.*?\)/g, "").replace(/[^a-z0-9]+/g, "");
-
-// Header text (or the old CSV column name) → internal key.
-const HEADER_KEYS = new Map<string, string>();
-for (const c of SHEET_COLUMNS) {
-  HEADER_KEYS.set(norm(c.header), c.key);
-  HEADER_KEYS.set(norm(c.key), c.key);
-}
-HEADER_KEYS.set("sku", "sku"); // optional: accepted when present, generated when absent
-HEADER_KEYS.set("costprice", "purchase_price");
-HEADER_KEYS.set("stock", "stock");
-HEADER_KEYS.set("quantity", "stock");
-HEADER_KEYS.set("specs", "specifications");
-for (const h of ["serial", "serials", "serialnumber", "serialno", "serialnos", "sn", "imei"]) HEADER_KEYS.set(h, "serial_numbers");
-
 const colLetter = (n: number) => {
   let s = "";
   for (; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
@@ -182,12 +169,12 @@ export async function buildProductTemplate(opts: { withProducts?: boolean } = {}
       if (range) {
         // Brands accept new names; every other list must match.
         const strict = c.list !== "brand";
-        cell.dataValidation = { type: "list", allowBlank: true, formulae: [range], showErrorMessage: strict, errorStyle: "error", errorTitle: c.header, error: `Please choose a ${c.header.toLowerCase()} from the list.` };
+        cell.dataValidation = { type: "list", allowBlank: true, formulae: [range], showErrorMessage: strict, errorStyle: "warning", errorTitle: c.header, error: `Please choose a ${c.header.toLowerCase()} from the list.` };
       } else if (["price", "discount_price", "purchase_price"].includes(c.key)) {
-        cell.dataValidation = { type: "decimal", operator: "greaterThanOrEqual", allowBlank: true, formulae: [0], showErrorMessage: true, errorTitle: c.header, error: "Enter an amount in naira using numbers only, e.g. 450000." };
+        cell.dataValidation = { type: "decimal", operator: "greaterThanOrEqual", allowBlank: true, formulae: [0], showErrorMessage: true, errorStyle: "warning", errorTitle: c.header, error: "Enter an amount in naira using numbers only, e.g. 450000." };
         cell.numFmt = "#,##0";
       } else if (c.key === "stock") {
-        cell.dataValidation = { type: "whole", operator: "greaterThanOrEqual", allowBlank: true, formulae: [0], showErrorMessage: true, errorTitle: c.header, error: "Enter a whole number, e.g. 5." };
+        cell.dataValidation = { type: "whole", operator: "greaterThanOrEqual", allowBlank: true, formulae: [0], showErrorMessage: true, errorStyle: "warning", errorTitle: c.header, error: "Enter a whole number, e.g. 5." };
       } else if (c.key === "serial_numbers") {
         // Text format, so Excel never turns a long numeric serial into 3.57E+14.
         cell.numFmt = "@";
@@ -202,10 +189,10 @@ export async function buildProductTemplate(opts: { withProducts?: boolean } = {}
   hs.getColumn(2).width = 110;
   const lines: [string, string][] = [
     ["Add many products at once", ""],
-    ["1.", "Go to the Products sheet. Fill one row per product. Columns with a red heading (marked *) are required."],
+    ["1.", "Go to the Products sheet. Fill one row per product. Only the Product name is truly needed: a missing category is worked out from the name, a missing condition becomes Brand New, and a product without a price is saved hidden (Draft) until you add one."],
     ["2.", "Use the dropdowns for Category, Subcategory, Condition and the Yes/No columns. Type a new Brand if it is not in the list."],
     ["3.", "Save the file, go back to Admin → Products → Add product, choose the file and press Check file."],
-    ["4.", "If the check passes, press Import. Nothing is saved unless every row is valid, so a mistake never leaves you with half an import."],
+    ["4.", "Press Import. Small mistakes (a misspelt category, ₦ signs or commas in prices, “used” instead of UK Used, the same product on two rows) are corrected for you and listed on screen. Only rows without a product name are skipped."],
     ["", ""],
     ["Where products appear", "Category and Subcategory decide the shop menu. Condition puts the product under Brand New or UK Used. Featured, Deal, New arrival and Best seller add it to those sections. Status “Active” shows it immediately."],
     ["Pictures", "Every product gets an automatic 3D picture straight away. The site then looks for a real photo on the manufacturer’s website in the background and swaps it in. You can replace or remove any picture on the product’s edit page."],
@@ -231,40 +218,52 @@ export async function buildProductTemplate(opts: { withProducts?: boolean } = {}
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-/** Reads a filled template (or any .xlsx with the same headings) into rows keyed by internal field name. */
+/** A worksheet as plain text cells (numbers kept exact, formulas as their result). */
+function sheetGrid(ws: ExcelJS.Worksheet): string[][] {
+  const grid: string[][] = [];
+  // Only rows that hold values (the template formats 1,000 empty rows).
+  ws.eachRow({ includeEmpty: false }, (row, r) => {
+    if (r > 5000) return;
+    const out: string[] = [];
+    row.eachCell({ includeEmpty: false }, (cell, c) => {
+      if (c > 60) return;
+      const v = cell.value as unknown;
+      let text: string;
+      if (typeof v === "number") text = String(v);
+      else if (v instanceof Date) text = v.toISOString().slice(0, 10);
+      else if (v && typeof v === "object" && "result" in v) text = String((v as { result: unknown }).result ?? "");
+      else text = cell.text ?? "";
+      out[c - 1] = text.trim();
+    });
+    grid[r - 1] = Array.from(out, (x) => x ?? "");
+  });
+  return Array.from(grid, (x) => x ?? []);
+}
+
+/**
+ * Reads a product sheet into rows keyed by field. Works with our template and with any sheet that
+ * has a product-name column: headings may be worded differently, in any order, below a title row,
+ * and on any worksheet.
+ */
 export async function parseProductSheet(data: ArrayBuffer): Promise<Record<string, string>[]> {
   const wb = new ExcelJS.Workbook();
   try {
     await wb.xlsx.load(data);
   } catch {
-    throw new UserError("That file could not be read. Please upload the Excel template (.xlsx) or a CSV file.");
+    throw new UserError("That file could not be opened. Save it in Excel as “Excel Workbook (.xlsx)” or as CSV and upload it again.");
   }
-  const ws = wb.getWorksheet("Products") ?? wb.worksheets[0];
-  if (!ws) throw new UserError("The workbook has no sheets.");
+  // Prefer the Products sheet, then any sheet whose headings include a product name.
+  const sheets = [wb.getWorksheet("Products"), ...wb.worksheets].filter((w): w is ExcelJS.Worksheet => Boolean(w) && w!.name !== "Lists" && w!.name !== "How to use");
+  for (const ws of sheets) {
+    const found = gridToRows(sheetGrid(ws));
+    if (found?.rows.length) return found.rows;
+  }
+  throw new UserError("No product list was found in the file. Make sure one column is headed “Product name” (or Item, Product, Model) with one product per row.");
+}
 
-  const keys: (string | null)[] = [];
-  ws.getRow(1).eachCell({ includeEmpty: true }, (cell, col) => {
-    keys[col] = HEADER_KEYS.get(norm(cell.text ?? "")) ?? null;
-  });
-  if (!keys.includes("name")) throw new UserError("The first row must contain the template headings (Product name, Category, …). Download a fresh template and try again.");
-
-  const rows: Record<string, string>[] = [];
-  ws.eachRow({ includeEmpty: false }, (row, n) => {
-    if (n === 1) return;
-    const out: Record<string, string> = {};
-    let any = false;
-    row.eachCell({ includeEmpty: false }, (cell, col) => {
-      const key = keys[col];
-      if (!key) return;
-      const v = cell.value;
-      // Numbers come back as numbers; never let Excel's display format ("450,000") reach the parser.
-      const text = (typeof v === "number" ? String(v) : (cell.text ?? "")).trim();
-      if (text) {
-        out[key] = text;
-        any = true;
-      }
-    });
-    if (any) rows.push({ ...out, __row: String(n) });
-  });
-  return rows;
+/** Same as parseProductSheet, for CSV files. */
+export function parseProductCsv(text: string): Record<string, string>[] {
+  const found = gridToRows(parseCsvGrid(text));
+  if (!found?.rows.length) throw new UserError("No product list was found in the file. Make sure one column is headed “Product name” (or Item, Product, Model) with one product per row.");
+  return found.rows;
 }
