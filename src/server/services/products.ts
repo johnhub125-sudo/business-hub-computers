@@ -12,6 +12,7 @@ import type { StaffContext } from "../session";
 import { adjustStock } from "./inventory";
 import { bestMatch, conditionFor, KIND_CATEGORY_HINTS, lenientAmount, lenientCount, lenientStatus, lenientYesNo, norm, parseSerials, parseSpecifications, tidyName } from "./import-tidy";
 import { productKind } from "@/lib/product-kind";
+import { templateById } from "@/lib/product-templates";
 
 const naira = z.union([z.string(), z.number()]).transform((v, ctx) => {
   const s = String(v).trim();
@@ -344,6 +345,34 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
   const fix = (row: number, message: string) => fixes.push(`Row ${row}: ${message}`);
   const topCats = cats.filter((c) => !c.parentId);
   const newCategories = new Map<string, string>(); // slug → name
+  const newCategoryIcons = new Map<string, string>(); // slug → icon, for department templates
+  // Subcategories created by this import: key "<parent id or new:slug>|<slug>".
+  const newSubcategories = new Map<string, { name: string; parent: string; slug: string }>();
+  const subSlugTaken = (slug: string) => cats.some((c) => c.slug === slug) || [...newCategories.keys()].includes(slug) || [...newSubcategories.values()].some((x) => x.slug === slug);
+  const addSubcategory = (parent: string, parentSlug: string, name: string) => {
+    let slug = slugify(name);
+    if (!slug) return null;
+    const key = `${parent}|${slug}`;
+    if (!newSubcategories.has(key)) {
+      if (subSlugTaken(slug)) slug = `${parentSlug}-${slug}`;
+      newSubcategories.set(key, { name: tidyName(name).slice(0, 80), parent, slug });
+    }
+    return `newsub:${key}`;
+  };
+  const parentSlugOf = (id: string) => (id.startsWith("new:") ? id.slice(4) : (cats.find((c) => c.id === id)?.slug ?? "cat"));
+
+  // Department templates fix the category (and, for computers, the condition) of every row.
+  const templateCategory = new Map<string, string>(); // template id → category name to use
+  for (const id of new Set(rows.map((r) => r.__template).filter(Boolean))) {
+    const t = templateById(id);
+    if (!t) continue;
+    const existing = topCats.find((c) => c.slug === t.category.slug) ?? topCats.find((c) => t.category.match.test(c.name));
+    templateCategory.set(id, existing?.name ?? t.category.name);
+    if (!existing) {
+      newCategories.set(t.category.slug, t.category.name);
+      newCategoryIcons.set(t.category.slug, t.category.icon);
+    }
+  }
   const newBrands = new Map<string, string>(); // slug → name as typed
   const defaultCondition = conditionFor(conds, "brand new") ?? conds[0];
   if (!defaultCondition) throw new UserError("Add at least one product condition (Settings → Catalogue) before importing.");
@@ -364,6 +393,13 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
       }
       const name2 = tidyName(typed).slice(0, 80);
       const slug = slugify(name2);
+      const hintFor = KIND_CATEGORY_HINTS[productKind({ name })];
+      const home = hintFor && productKind({ name }) !== "accessory" ? topCats.find((c) => hintFor.test(c.name.toLowerCase())) : undefined;
+      if (slug && home) {
+        const sub = addSubcategory(home.id, home.slug, name2);
+        fix(row, `“${typed}” placed under ${home.name} › ${name2}`);
+        return { categoryId: home.id, subcategoryId: sub, label: home.name };
+      }
       if (slug) {
         if (!newCategories.has(slug)) newCategories.set(slug, name2);
         return { categoryId: `new:${slug}`, subcategoryId: null, label: name2 };
@@ -390,6 +426,13 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
     return { categoryId: "new:others", subcategoryId: null, label: "Others" };
   };
 
+  /** Department template rows always go to the template's category, never to a guess. */
+  const templatePlace = (t: NonNullable<ReturnType<typeof templateById>>) => {
+    const catName = templateCategory.get(t.id) ?? t.category.name;
+    const existing = topCats.find((c) => c.name === catName);
+    return existing ? { categoryId: existing.id, subcategoryId: null, label: existing.name } : { categoryId: `new:${t.category.slug}`, subcategoryId: null, label: t.category.name };
+  };
+
   const clean: CleanRow[] = [];
   rows.forEach((r, i) => {
     const row = Number(r.__row) || i + 2;
@@ -401,19 +444,22 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
     }
     if ((r.name ?? "").trim().length > 200) fix(row, "product name shortened to 200 characters");
 
-    const place = placeCategory(row, clip(r.category, 80), clip(r.subcategory, 80), name);
+    const tpl = r.__template ? templateById(r.__template) : undefined;
+    const place = tpl ? templatePlace(tpl) :placeCategory(row, clip(r.category, 80), clip(r.subcategory, 80), name);
     let subcategoryId = place.subcategoryId;
     if (r.subcategory?.trim() && !subcategoryId) {
       const sub = place.categoryId.startsWith("new:") ? undefined : bestMatch(cats.filter((c) => c.parentId === place.categoryId), r.subcategory);
+      const offered = tpl && bestMatch(tpl.subcategories.map((n) => ({ name: n, slug: slugify(n) })), r.subcategory);
       if (sub) subcategoryId = sub.id;
+      else if (offered) subcategoryId = addSubcategory(place.categoryId, parentSlugOf(place.categoryId), offered.name);
       else fix(row, `subcategory “${r.subcategory.trim()}” is not under ${place.label} — left out`);
     }
 
-    let cond = r.condition?.trim() ? conditionFor(conds, r.condition) : undefined;
+    let cond = tpl?.condition ? conditionFor(conds, tpl.condition) : r.condition?.trim() ? conditionFor(conds, r.condition) : undefined;
     if (!cond) {
       if (r.condition?.trim()) fix(row, `condition “${r.condition.trim()}” not recognised — set to ${defaultCondition.name}`);
       cond = defaultCondition;
-    } else if (norm(cond.name) !== norm(r.condition ?? "")) fix(row, `condition “${r.condition!.trim()}” read as ${cond.name}`);
+    } else if (!tpl?.condition && norm(cond.name) !== norm(r.condition ?? "")) fix(row, `condition “${r.condition!.trim()}” read as ${cond.name}`);
 
     let status = lenientStatus(r.status);
     let price = lenientAmount(r.price);
@@ -518,6 +564,7 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
 
   const notes: string[] = [];
   if (input.length > MAX_IMPORT_ROWS) notes.push(`Only the first ${MAX_IMPORT_ROWS.toLocaleString()} rows were read — import the rest in a second file.`);
+  if (newSubcategories.size) notes.push(`New subcategor${newSubcategories.size === 1 ? "y" : "ies"} ${dryRun ? "will be" : "were"} created: ${[...newSubcategories.values()].map((x) => x.name).join(", ")}.`);
   if (newCategories.size) notes.push(`New categor${newCategories.size === 1 ? "y" : "ies"} ${dryRun ? "will be" : "were"} created: ${[...newCategories.values()].join(", ")}.`);
   if (newBrands.size) notes.push(`${newBrands.size} new brand(s) ${dryRun ? "will be" : "were"} created: ${[...newBrands.values()].join(", ")}.`);
   const withSerials = parsed.filter((p) => p.serials.length);
@@ -540,10 +587,16 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
     // Categories typed in the file that the shop did not have yet.
     const newCatIds = new Map<string, string>();
     for (const [slug, name] of newCategories) {
-      const [c] = await tx.insert(categories).values({ name, slug }).onConflictDoUpdate({ target: categories.slug, set: { slug } }).returning({ id: categories.id });
+      const [c] = await tx.insert(categories).values({ name, slug, icon: newCategoryIcons.get(slug) ?? null }).onConflictDoUpdate({ target: categories.slug, set: { slug } }).returning({ id: categories.id });
       newCatIds.set(slug, c.id);
     }
     const catId = (id: string) => (id.startsWith("new:") ? newCatIds.get(id.slice(4))! : id);
+    const newSubIds = new Map<string, string>();
+    for (const [key, sub] of newSubcategories) {
+      const [c] = await tx.insert(categories).values({ name: sub.name, slug: sub.slug, parentId: catId(sub.parent) }).onConflictDoUpdate({ target: categories.slug, set: { slug: sub.slug } }).returning({ id: categories.id });
+      newSubIds.set(`newsub:${key}`, c.id);
+    }
+    const subId = (id: string | null) => (id?.startsWith("newsub:") ? newSubIds.get(id)! : id);
     const current = await tx.select({ id: products.id, sku: products.sku, name: products.name, conditionId: products.conditionId, deletedAt: products.deletedAt }).from(products);
     const bySku = new Map(current.map((c) => [c.sku.toUpperCase(), c]));
     const byName = new Map(current.filter((c) => !c.deletedAt).map((c) => [nameKey(c.name, c.conditionId), c]));
@@ -567,7 +620,7 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
         name: p.name,
         brandId: p.brandKey ? (brandIds.get(p.brandKey) ?? null) : null,
         categoryId: catId(p.categoryId),
-        subcategoryId: p.subcategoryId,
+        subcategoryId: subId(p.subcategoryId),
         conditionId: p.conditionId,
         price: p.price,
         discountPrice: p.discount_price ?? null,

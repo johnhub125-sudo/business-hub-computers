@@ -8,6 +8,8 @@ import { importProductsAction } from "@/app/admin/actions/products";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PhotoFinder } from "./product-photos";
+import { DynamicIcon } from "@/components/store/icons";
+import { PRODUCT_TEMPLATES } from "@/lib/product-templates";
 
 type Result = { ok: boolean; errors: { row: number; message: string }[]; notes: string[]; count: number; created: number; updated: number; photos: { ready: boolean; waiting: number } | null };
 
@@ -68,10 +70,10 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
       <ol className="mt-4 grid gap-3 md:grid-cols-3">
         <li className="rounded-xl border border-line p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-brand-600">Step 1</p>
-          <p className="mt-1 text-sm font-semibold">Get the template</p>
-          <p className="mt-0.5 text-xs text-muted">Includes dropdowns for your categories, brands and conditions, plus instructions.</p>
+          <p className="mt-1 text-sm font-semibold">Get a template</p>
+          <p className="mt-0.5 text-xs text-muted">Best: a department template below, so every product lands in the right place. Or the general one for mixed goods.</p>
           <a href="/admin/products-template" download className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold hover:bg-surface">
-            <Download className="size-4" aria-hidden /> Download Excel template
+            <Download className="size-4" aria-hidden /> General template (mixed goods)
           </a>
           <a href="/admin/products-template?products=1" download className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold hover:bg-surface">
             <Download className="size-4" aria-hidden /> Export my products to Excel
@@ -109,6 +111,28 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
           <p className="mt-2 text-xs text-muted">Nothing is saved until every row passes the check. A row with the same name and condition as an existing product updates it.</p>
         </li>
       </ol>
+
+      <div className="mt-4">
+        <p className="text-xs font-bold uppercase tracking-wide text-brand-600">Department templates</p>
+        <p className="mt-0.5 text-xs text-muted">The category is built in (and Brand New / UK Used for computers), with the right specification columns and dropdowns for each kind of product.</p>
+        <ul className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+          {PRODUCT_TEMPLATES.map((t) => (
+            <li key={t.id}>
+              <a href={`/admin/products-template?template=${t.id}`} download className="group flex h-full items-start gap-3 rounded-xl border border-line bg-white p-3 transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700 group-hover:bg-brand-700 group-hover:text-white">
+                  <DynamicIcon name={t.icon} className="size-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                    {t.label} <Download className="size-3.5 text-muted" aria-hidden />
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted">{t.blurb}</span>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {done && result?.photos && (result.photos.waiting > 0 || !result.photos.ready) && <PhotoFinder key={result.created + result.updated} waiting={result.photos.waiting} ready={result.photos.ready} autoStart className="mt-4" />}
 

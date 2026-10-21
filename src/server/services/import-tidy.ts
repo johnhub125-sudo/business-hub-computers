@@ -52,13 +52,14 @@ export function headerKey(heading: string): string | null {
  * Finds the heading row (any of the first 15 rows) and turns the grid into rows keyed by field.
  * `__row` keeps the spreadsheet row number for messages.
  */
-export function gridToRows(grid: string[][]): { rows: Record<string, string>[]; columns: string[]; ignored: string[] } | null {
+export function gridToRows(grid: string[][], extra?: Map<string, string>): { rows: Record<string, string>[]; columns: string[]; ignored: string[] } | null {
   let best = { at: -1, score: 0, keys: [] as (string | null)[] };
   for (let r = 0; r < Math.min(grid.length, 15); r++) {
     const keys: (string | null)[] = [];
     const used = new Set<string>();
     for (const cell of grid[r] ?? []) {
-      const k = headerKey(cell ?? "");
+      // Headings a department template declared (its specification columns) come first.
+      const k = extra?.get(norm(cell ?? "")) ?? headerKey(cell ?? "");
       // A field is taken by the first column that claims it.
       keys.push(k && !used.has(k) ? k : null);
       if (k) used.add(k);

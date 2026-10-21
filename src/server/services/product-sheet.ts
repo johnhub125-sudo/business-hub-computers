@@ -5,13 +5,15 @@ import { db } from "../db";
 import { brands, categories, productConditions, productSerials, products } from "../db/schema";
 import { UserError } from "../errors";
 import { parseCsvGrid } from "@/lib/csv";
-import { gridToRows } from "./import-tidy";
+import { gridToRows, norm } from "./import-tidy";
+import { type ProductTemplate, templateById } from "@/lib/product-templates";
 
 /**
  * The Excel template for adding many products at once (Admin → Products → Add product).
  * `key` is the internal field name used by importProducts(); `header` is what staff see.
  */
-type Column = { key: string; header: string; width: number; required?: boolean; help: string; list?: "category" | "subcategory" | "brand" | "condition" | "yesno" | "status" };
+/** `list` names a column of the Lists sheet; specification columns of a department template use "spec:<name>". */
+type Column = { key: string; header: string; width: number; required?: boolean; help: string; list?: string };
 
 const TEMPLATE_COLUMNS: Column[] = [
   { key: "name", header: "Product name", width: 44, required: true, help: "The full name customers will see. The product code (SKU) and web address are created for you. A row with the same name and condition as an existing product updates it." },
@@ -38,6 +40,26 @@ const TEMPLATE_COLUMNS: Column[] = [
 ];
 
 export const SHEET_COLUMNS = TEMPLATE_COLUMNS;
+
+/** Columns of a department template: no Category column (it is fixed), its own specification columns. */
+export function departmentColumns(t: ProductTemplate): Column[] {
+  const out: Column[] = [];
+  for (const c of TEMPLATE_COLUMNS) {
+    if (c.key === "category") continue;
+    if (c.key === "condition" && t.condition) continue;
+    if (c.key === "subcategory") {
+      out.push({ ...c, header: "Type", help: `Pick the kind of product. Decides where it appears under ${t.category.name}.` });
+      continue;
+    }
+    if (c.key === "specifications") {
+      for (const s of t.specs) out.push({ key: `spec:${s.key}`, header: s.header ?? s.key, width: s.width ?? 16, help: s.help, list: s.options?.length ? `spec:${s.key}` : undefined });
+      out.push({ ...c, header: "Other specifications", help: "Anything else, as Name: value; Name: value." });
+      continue;
+    }
+    out.push(c.key === "condition" ? { ...c, required: false, help: "Brand New unless you choose otherwise." } : c);
+  }
+  return out;
+}
 
 const MAX_ROWS = 1000;
 const NAVY = "FF1B2A7B";
@@ -107,21 +129,25 @@ async function currentProductRows(): Promise<Record<string, string | number>[]> 
  * With `withProducts`, the sheet comes filled with the current products (and a SKU column that
  * identifies each one), ready to edit and import back.
  */
-export async function buildProductTemplate(opts: { withProducts?: boolean } = {}): Promise<Buffer> {
-  const SHEET_COLUMNS: Column[] = opts.withProducts ? [{ key: "sku", header: "SKU", width: 18, help: "Identifies the product. Do not change it. Leave blank on a new row and one is created for you." }, ...TEMPLATE_COLUMNS] : TEMPLATE_COLUMNS;
+export async function buildProductTemplate(opts: { withProducts?: boolean; template?: string } = {}): Promise<Buffer> {
+  const tpl = opts.withProducts ? undefined : templateById(opts.template);
+  const SHEET_COLUMNS: Column[] = tpl ? departmentColumns(tpl) : opts.withProducts ? [{ key: "sku", header: "SKU", width: 18, help: "Identifies the product. Do not change it. Leave blank on a new row and one is created for you." }, ...TEMPLATE_COLUMNS] : TEMPLATE_COLUMNS;
   const filled = opts.withProducts ? await currentProductRows() : [];
   const [cats, brs, conds] = await Promise.all([
     db.select({ id: categories.id, name: categories.name, parentId: categories.parentId }).from(categories).orderBy(asc(categories.sortOrder), asc(categories.name)),
     db.select({ name: brands.name }).from(brands).orderBy(asc(brands.name)),
     db.select({ name: productConditions.name }).from(productConditions).orderBy(asc(productConditions.sortOrder)),
   ]);
-  const lists: Record<NonNullable<Column["list"]>, string[]> = {
+  // A department template offers only its own types: the ones the shop already has under that category plus the standard ones.
+  const tplTop = tpl ? cats.find((c) => !c.parentId && (c.name.toLowerCase().replace(/[^a-z]/g, "") === tpl.category.slug.replace(/-/g, "") || tpl.category.match.test(c.name))) : undefined;
+  const lists: Record<string, string[]> = {
     category: cats.filter((c) => !c.parentId).map((c) => c.name),
-    subcategory: cats.filter((c) => c.parentId).map((c) => c.name),
+    subcategory: tpl ? [...new Set([...tpl.subcategories, ...cats.filter((c) => tplTop && c.parentId === tplTop.id).map((c) => c.name)])] : cats.filter((c) => c.parentId).map((c) => c.name),
     brand: brs.map((b) => b.name),
     condition: conds.map((c) => c.name),
     yesno: ["Yes", "No"],
     status: ["Active", "Draft"],
+    ...Object.fromEntries((tpl?.specs ?? []).filter((s) => s.options?.length).map((s) => [`spec:${s.key}`, s.options!])),
   };
 
   const wb = new ExcelJS.Workbook();
@@ -149,13 +175,13 @@ export async function buildProductTemplate(opts: { withProducts?: boolean } = {}
 
   // ── Lists (feeds the dropdowns) ──
   const ls = wb.addWorksheet("Lists");
-  const listKeys = Object.keys(lists) as (keyof typeof lists)[];
-  const listRange: Partial<Record<keyof typeof lists, string>> = {};
+  const listKeys = Object.keys(lists);
+  const listRange: Record<string, string> = {};
   listKeys.forEach((k, i) => {
     const col = i + 1;
     ls.getColumn(col).width = 26;
     const title = ls.getCell(1, col);
-    title.value = k === "yesno" ? "Yes / No" : k[0].toUpperCase() + k.slice(1);
+    title.value = k === "yesno" ? "Yes / No" : k.startsWith("spec:") ? k.slice(5) : k[0].toUpperCase() + k.slice(1);
     title.font = { bold: true };
     lists[k].forEach((v, r) => (ls.getCell(r + 2, col).value = v));
     if (lists[k].length) listRange[k] = `Lists!$${colLetter(col)}$2:$${colLetter(col)}$${lists[k].length + 1}`;
@@ -183,11 +209,37 @@ export async function buildProductTemplate(opts: { withProducts?: boolean } = {}
     }
   });
 
+  // ── Template marker (hidden): tells the upload which department this file is for ──
+  if (tpl) {
+    const ms = wb.addWorksheet("Template", { state: "veryHidden" });
+    ms.getCell("A1").value = tpl.id;
+    SHEET_COLUMNS.forEach((c, i) => {
+      ms.getCell(i + 2, 1).value = c.required ? `${c.header} *` : c.header;
+      ms.getCell(i + 2, 2).value = c.key;
+    });
+  }
+
   // ── How to use ──
   const hs = wb.addWorksheet("How to use");
   hs.getColumn(1).width = 26;
   hs.getColumn(2).width = 110;
-  const lines: [string, string][] = [
+  const example = tpl ? Object.entries(tpl.example).map(([k, v]) => `${SHEET_COLUMNS.find((c) => c.key === k || c.key === `spec:${k}`)?.header ?? k}: ${v}`).join(" · ") : "";
+  const lines: [string, string][] = tpl
+    ? [
+        [`${tpl.label} — upload template`, ""],
+        ["What this file is for", `Every product in this file goes under ${tpl.category.name}${tpl.condition ? ` as ${tpl.condition}` : ""}. You cannot put it in the wrong category by mistake. Use the general template or another department template for other goods.`],
+        ["1.", "Fill one row per product on the Products sheet. Red headings are required: Product name and Price."],
+        ["2.", "Choose the Type from the dropdown, then fill the specification columns. They appear on the product page and power the shop filters."],
+        ["3.", "Upload the saved file in Admin → Products → Add product, press Check file, then Import. Mistakes are corrected automatically and listed."],
+        ["Serial numbers", "Type every unit's serial number in the Serial numbers cell, separated by commas. The count becomes the stock."],
+        ["Pictures", "Real photos are found from the manufacturer automatically after the upload. You can replace any picture on the product's edit page."],
+        ["", ""],
+        ["Column guide", ""],
+        ...SHEET_COLUMNS.map((c): [string, string] => [c.required ? `${c.header} *` : c.header, c.help]),
+        ["", ""],
+        ["Example row", example],
+      ]
+    : [
     ["Add many products at once", ""],
     ["1.", "Go to the Products sheet. Fill one row per product. Only the Product name is truly needed: a missing category is worked out from the name, a missing condition becomes Brand New, and a product without a price is saved hidden (Draft) until you add one."],
     ["2.", "Use the dropdowns for Category, Subcategory, Condition and the Yes/No columns. Type a new Brand if it is not in the list."],
@@ -205,7 +257,7 @@ export async function buildProductTemplate(opts: { withProducts?: boolean } = {}
     ...SHEET_COLUMNS.map((c): [string, string] => [c.required ? `${c.header} *` : c.header, c.help]),
     ["", ""],
     ["Example row", "Product name: HP EliteBook 840 G8 Core i7 · Category: Computers · Subcategory: Business Laptops · Brand: HP · Condition: UK Used · Price: 520000 · Serial numbers: 5CG1234ABC, 5CG1234ABD, 5CG1234ABE, 5CG1234ABF (= 4 in stock) · Specifications: Processor: Core i7 11th Gen; RAM: 16GB; Storage: 512GB SSD · Featured: Yes"],
-  ];
+      ];
   lines.forEach(([a, b], i) => {
     const row = hs.getRow(i + 1);
     row.getCell(1).value = a;
@@ -252,13 +304,31 @@ export async function parseProductSheet(data: ArrayBuffer): Promise<Record<strin
   } catch {
     throw new UserError("That file could not be opened. Save it in Excel as “Excel Workbook (.xlsx)” or as CSV and upload it again.");
   }
+  // A department template carries a hidden marker: its id and the meaning of each column.
+  const marker = wb.getWorksheet("Template");
+  const tpl = templateById(marker?.getCell("A1").text?.trim());
+  const extra = new Map<string, string>();
+  if (marker && tpl) marker.eachRow((row, n) => n > 1 && row.getCell(1).text && extra.set(norm(row.getCell(1).text), row.getCell(2).text));
   // Prefer the Products sheet, then any sheet whose headings include a product name.
-  const sheets = [wb.getWorksheet("Products"), ...wb.worksheets].filter((w): w is ExcelJS.Worksheet => Boolean(w) && w!.name !== "Lists" && w!.name !== "How to use");
+  const sheets = [wb.getWorksheet("Products"), ...wb.worksheets].filter((w): w is ExcelJS.Worksheet => Boolean(w) && !["Lists", "How to use", "Template"].includes(w!.name));
   for (const ws of sheets) {
-    const found = gridToRows(sheetGrid(ws));
-    if (found?.rows.length) return found.rows;
+    const found = gridToRows(sheetGrid(ws), tpl ? extra : undefined);
+    if (found?.rows.length) return tpl ? found.rows.map((r) => applyTemplate(r, tpl)) : found.rows;
   }
   throw new UserError("No product list was found in the file. Make sure one column is headed “Product name” (or Item, Product, Model) with one product per row.");
+}
+
+/** Folds a department row's specification columns into Specifications and tags the row with its template. */
+function applyTemplate(r: Record<string, string>, tpl: ProductTemplate): Record<string, string> {
+  const out: Record<string, string> = { __template: tpl.id };
+  const specs: string[] = [];
+  for (const [k, v] of Object.entries(r)) {
+    if (k.startsWith("spec:")) {
+      if (v.trim() && v.trim() !== "—") specs.push(`${k.slice(5)}: ${v.trim()}`);
+    } else out[k] = v;
+  }
+  if (specs.length) out.specifications = [...specs, out.specifications].filter(Boolean).join("; ");
+  return out;
 }
 
 /** Same as parseProductSheet, for CSV files. */

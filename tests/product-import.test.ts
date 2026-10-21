@@ -295,3 +295,93 @@ describe("Export to Excel and import back", () => {
     expect(after).toMatchObject({ price: hpProduct.price, isFeatured: true, specifications: { RAM: "16GB" }, subcategoryId: hpProduct.subcategoryId, slug: hpProduct.slug });
   });
 });
+
+describe("Department templates", () => {
+  beforeEach(async () => {
+    await resetDb();
+    staff.id = await makeUser({ userType: "staff" });
+    await seedCatalogue();
+  });
+
+  /** Downloads a department template and fills it by heading, as staff would in Excel. */
+  async function fillDepartment(template: string, rows: Record<string, string | number>[]) {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildProductTemplate({ template })).buffer as ArrayBuffer);
+    const ws = wb.getWorksheet("Products")!;
+    const heads = (ws.getRow(1).values as unknown[]).map((h) => String(h ?? "").replace(" *", ""));
+    rows.forEach((r, i) => {
+      for (const [h, v] of Object.entries(r)) {
+        const col = heads.indexOf(h);
+        if (col < 1) throw new Error(`No “${h}” column in ${template}`);
+        ws.getCell(i + 2, col).value = v;
+      }
+    });
+    return parseProductSheet((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+  }
+
+  it("puts UK used computers under Computers as UK Used, with their specifications", async () => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildProductTemplate({ template: "uk-used-computers" })).buffer as ArrayBuffer);
+    const heads = (wb.getWorksheet("Products")!.getRow(1).values as unknown[]).map(String);
+    expect(heads).not.toContain("Category *");
+    expect(heads).not.toContain("Condition *");
+    expect(heads).toEqual(expect.arrayContaining(["RAM", "Processor", "Grade", "Type"]));
+
+    const rows = await fillDepartment("uk-used-computers", [{ "Product name": "Dell Latitude 5420 Core i7", Type: "Business Laptops", Brand: "Dell", "Price (₦)": 420000, Processor: "Core i7", RAM: "16GB", Storage: "512GB SSD", "Screen size": "14 inch", Grade: "Grade A", "Serial numbers": "SN1, SN2" }]);
+    expect((await importProducts(rows, staff, false)).created).toBe(1);
+    const [p] = await db.select().from(products);
+    const cats = await db.select().from(categories);
+    const conds = await db.select().from(productConditions);
+    expect(cats.find((c) => c.id === p.categoryId)!.name).toBe("Computers");
+    expect(cats.find((c) => c.id === p.subcategoryId)!.name).toBe("Business Laptops");
+    expect(conds.find((c) => c.id === p.conditionId)!.name).toBe("UK Used");
+    expect(p.specifications).toMatchObject({ Processor: "Core i7", RAM: "16GB", Storage: "512GB SSD", Screen: "14 inch", Grade: "Grade A" });
+    expect(await stockOf(p.id)).toBe(2);
+  });
+
+  it("creates a department and its types the first time they are used, and never misfiles a row", async () => {
+    // A misleading name ("laptop") must still go to Networking, because the file is the Networking template.
+    const rows = await fillDepartment("networking", [
+      { "Product name": "TP-Link laptop Wi-Fi adapter AX1800", Type: "Access Points", "Price (₦)": 25000, "Device type": "USB Wi-Fi adapter", "Wi-Fi standard": "Wi-Fi 6 (AX)" },
+      { "Product name": "Cisco 24-port switch", Type: "switch", "Price (₦)": 180000, Condition: "UK Used" },
+    ]);
+    const res = await importProducts(rows, staff, false);
+    expect(res).toMatchObject({ ok: true, created: 2 });
+    const cats = await db.select().from(categories);
+    const networking = cats.find((c) => c.name === "Networking")!;
+    expect(networking).toMatchObject({ parentId: null, icon: "router" });
+    const all = await db.select().from(products);
+    expect(all.every((p) => p.categoryId === networking.id)).toBe(true);
+    const subName = (id: string | null) => cats.find((c) => c.id === id)?.name;
+    expect(all.map((p) => subName(p.subcategoryId)).sort()).toEqual(["Access Points", "Switches"]);
+    expect(all.find((p) => p.name.startsWith("TP-Link"))!.specifications).toMatchObject({ Type: "USB Wi-Fi adapter", "Wi-Fi standard": "Wi-Fi 6 (AX)" });
+  });
+
+  it("uses the shop's existing category for a department (Printers), and offers its types", async () => {
+    const rows = await fillDepartment("printers", [{ "Product name": "HP 85A Black Toner", Type: "Toner", "Price (₦)": 28500, "Cartridge code": "CE285A" }]);
+    await importProducts(rows, staff, false);
+    const cats = await db.select().from(categories);
+    const [p] = await db.select().from(products);
+    expect(cats.filter((c) => c.name === "Printers")).toHaveLength(1);
+    expect(cats.find((c) => c.id === p.categoryId)!.name).toBe("Printers");
+    expect(cats.find((c) => c.id === p.subcategoryId)!.name).toBe("Toner");
+  });
+});
+
+describe("General template: computer series typed as a category", () => {
+  beforeEach(async () => {
+    await resetDb();
+    staff.id = await makeUser({ userType: "staff" });
+    await seedCatalogue();
+  });
+
+  it("files “HP EliteBook” under Computers instead of creating a new top-level category", async () => {
+    const res = await importProducts(await fillTemplate([{ name: "HP EliteBook 840 G8 laptop Core i5", category: "HP EliteBook", condition: "UK Used", price: 380000 }]), staff, false);
+    expect(res.ok).toBe(true);
+    const cats = await db.select().from(categories);
+    const [p] = await db.select().from(products);
+    expect(cats.find((c) => c.id === p.categoryId)!.name).toBe("Computers");
+    expect(cats.find((c) => c.id === p.subcategoryId)).toMatchObject({ name: "HP EliteBook" });
+    expect(cats.filter((c) => !c.parentId).map((c) => c.name).sort()).toEqual(["Computers", "Printers"]);
+  });
+});
