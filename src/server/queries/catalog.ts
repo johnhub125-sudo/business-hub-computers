@@ -73,6 +73,8 @@ export type ProductCardData = {
   variantCount: number;
   variantId: string | null;
   isDeal: boolean;
+  /** Up to three key specifications, e.g. "Core i7 · 16GB · 512GB SSD". */
+  highlights: string | null;
   isNewArrival: boolean;
   isBestSeller: boolean;
   isClearance: boolean;
@@ -83,11 +85,20 @@ export type ProductCardData = {
   createdAt: Date;
 };
 
+/** The specifications shoppers compare first, in order. */
+const HIGHLIGHT_KEYS = ["Processor", "RAM", "Storage", "Screen", "Graphics", "Capacity", "Output power", "Battery type", "Speed", "Wi-Fi standard", "Network", "Print technology", "Functions", "Cartridge code", "Connectivity", "Type"];
+function specHighlights(specs: Record<string, string> | null | undefined): string | null {
+  if (!specs) return null;
+  const parts = HIGHLIGHT_KEYS.map((k) => specs[k]?.trim()).filter((v): v is string => Boolean(v) && v !== "—" && v.length <= 24);
+  return parts.length ? parts.slice(0, 3).join(" · ") : null;
+}
+
 function normaliseCard(row: Record<string, unknown>): ProductCardData {
   const { artCategory, artSpecs, ...r } = row as Record<string, unknown> & { artCategory: string; artSpecs: Record<string, string> };
   const c = r as ProductCardData & { image: string | null };
   return {
     ...c,
+    highlights: specHighlights(artSpecs),
     image: productImage(c.image, { name: c.name, brand: c.brand, category: artCategory, condition: c.condition, specs: artSpecs }, true),
     listPrice: Number(r.listPrice),
     salePrice: r.salePrice == null ? null : Number(r.salePrice),
@@ -416,18 +427,23 @@ export async function latestReviews(limit = 6) {
 /* ─────────────── navigation / facets ─────────────── */
 
 export const getNavigation = cache(async () => {
-  const [cats, conds, brandRows] = await Promise.all([
+  const [cats, conds, brandRows, stocked] = await Promise.all([
     db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.name)),
     db.select().from(productConditions).where(eq(productConditions.isActive, true)).orderBy(asc(productConditions.sortOrder)),
-    db.select({ name: brands.name, slug: brands.slug, logo: brands.logo }).from(brands).where(eq(brands.isActive, true)).orderBy(asc(brands.sortOrder)),
+    db.select({ id: brands.id, name: brands.name, slug: brands.slug, logo: brands.logo }).from(brands).where(eq(brands.isActive, true)).orderBy(asc(brands.sortOrder)),
+    db.select({ categoryId: products.categoryId, subcategoryId: products.subcategoryId, brandId: products.brandId }).from(products).where(visible).groupBy(products.categoryId, products.subcategoryId, products.brandId),
   ]);
-  const top = cats.filter((c) => !c.parentId);
+  // Menus show only departments (and types) that have products, so shoppers never land on an empty page.
+  // A brand-new shop with no products yet still shows everything.
+  const used = new Set(stocked.flatMap((r) => [r.categoryId, r.subcategoryId].filter(Boolean) as string[]));
+  const keep = (id: string) => !stocked.length || used.has(id);
+  const top = cats.filter((c) => !c.parentId && keep(c.id));
   return {
-    categories: top.map((c) => ({ ...c, children: cats.filter((x) => x.parentId === c.id) })),
+    categories: top.map((c) => ({ ...c, children: cats.filter((x) => x.parentId === c.id && keep(x.id)) })),
     allCategories: cats,
     collections: conds.filter((c) => c.isCollection),
     conditions: conds,
-    brands: brandRows,
+    brands: brandRows.filter((b) => !stocked.length || stocked.some((r) => r.brandId === b.id)),
   };
 });
 

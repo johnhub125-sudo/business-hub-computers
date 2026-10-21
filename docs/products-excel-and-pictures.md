@@ -98,3 +98,13 @@ The template has a **Serial numbers** column. Type every unit's serial number in
 ### Export, edit, import back
 
 **Add product → Export my products to Excel** downloads the same sheet filled with your current products (up to 1,000), including each product's in-stock serial numbers and a SKU column that identifies it. Edit prices or details, type more serial numbers into a product's cell, add new rows, then import the file back. Importing an unchanged export changes nothing.
+
+## Department templates
+
+Admin → Products → Add product offers one template per department: Brand New Computers, UK Used Computers, Printers/Toner/Ink & Cartridges, Accessories, Solar & Power, Networking, and Phones & Accessories.
+
+- The category is built into the file (and Brand New / UK Used for computers), so a product cannot be filed in the wrong place.
+- **Type** is a dropdown of that department's kinds (e.g. Toner, Ink, Cartridges). A type the shop does not have yet is created on first use.
+- Each department has its own specification columns with dropdowns (Processor/RAM/Storage/Screen for computers, cartridge code and compatible printers for consumables, capacity and battery type for solar, Wi-Fi standard for networking, storage/network for phones). They appear on the product page, power the shop filters, and show as a short spec line on product cards.
+- A department that does not exist yet (Networking, Phones & Accessories) is created with its icon the first time its template is imported.
+- In the general template, a computer series typed as a category (e.g. "HP EliteBook") is now filed under Computers as a type, instead of becoming a new top-level menu entry.

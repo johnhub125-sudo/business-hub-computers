@@ -10,9 +10,10 @@ import { ProductImage } from "./product-image";
 
 type Suggestion = Awaited<ReturnType<typeof searchSuggestionsAction>>[number];
 
-export function SearchBox({ className, autoFocus, onDone }: { className?: string; autoFocus?: boolean; onDone?: () => void }) {
+export function SearchBox({ className, autoFocus, onDone, departments = [] }: { className?: string; autoFocus?: boolean; onDone?: () => void; departments?: { slug: string; name: string }[] }) {
   const router = useRouter();
   const [q, setQ] = useState("");
+  const [dept, setDept] = useState("");
   const [items, setItems] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -52,15 +53,37 @@ export function SearchBox({ className, autoFocus, onDone }: { className?: string
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (active >= 0 && shown[active]) return go(`/products/${shown[active].slug}`);
-    if (q.trim()) go(`/search?q=${encodeURIComponent(q.trim())}`);
+    if (q.trim()) go(`/search?q=${encodeURIComponent(q.trim())}${dept ? `&cat=${encodeURIComponent(dept)}` : ""}`);
+    else if (dept) go(`/categories/${dept}`);
   }
 
   return (
     <div ref={wrap} className={cn("relative", className)}>
-      <form role="search" onSubmit={submit} className="relative">
+      <form role="search" onSubmit={submit} className="relative flex items-stretch rounded-full border border-line bg-surface transition focus-within:border-brand-500 focus-within:bg-white focus-within:ring-4 focus-within:ring-brand-500/10">
+        {departments.length > 0 && (
+          <>
+            <label htmlFor={`${listId}-dept`} className="sr-only">
+              Department
+            </label>
+            <select
+              id={`${listId}-dept`}
+              value={dept}
+              onChange={(e) => setDept(e.target.value)}
+              className="hidden max-w-[170px] shrink-0 cursor-pointer truncate rounded-l-full border-r border-line bg-transparent pl-4 pr-2 text-[13px] font-semibold text-ink focus:outline-none lg:block"
+            >
+              <option value="">All departments</option>
+              {departments.map((d) => (
+                <option key={d.slug} value={d.slug}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         <label htmlFor={`${listId}-input`} className="sr-only">
           Search products
         </label>
+        <div className="relative min-w-0 flex-1">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-slate-400" aria-hidden />
         <input
           id={`${listId}-input`}
@@ -79,12 +102,12 @@ export function SearchBox({ className, autoFocus, onDone }: { className?: string
               setActive((a) => Math.max(a - 1, -1));
             } else if (e.key === "Escape") setOpen(false);
           }}
-          placeholder="Search laptops, brands, SKU, specs…"
+          placeholder="Search laptops, printers, solar, phones…"
           role="combobox"
           aria-expanded={open && shown.length > 0}
           aria-controls={listId}
           aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
-          className="h-11 w-full rounded-full border border-line bg-surface pl-10 pr-24 text-[15px] placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-brand-500/10 [&::-webkit-search-cancel-button]:hidden"
+          className="h-11 w-full rounded-full bg-transparent pl-10 pr-24 text-[15px] placeholder:text-slate-400 focus:outline-none [&::-webkit-search-cancel-button]:hidden"
         />
         {q && (
           <button type="button" onClick={() => setQ("")} className="absolute right-[4.6rem] top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:text-ink" aria-label="Clear search">
@@ -94,6 +117,7 @@ export function SearchBox({ className, autoFocus, onDone }: { className?: string
         <button type="submit" className="absolute right-1 top-1 inline-flex h-9 items-center gap-1 rounded-full bg-brand-700 px-4 text-sm font-semibold text-white hover:bg-brand-800">
           {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : "Search"}
         </button>
+        </div>
       </form>
       {open && shown.length > 0 && (
         <ul id={listId} role="listbox" className="absolute inset-x-0 top-[calc(100%+6px)] z-50 overflow-hidden rounded-2xl border border-line bg-white p-1.5 shadow-[var(--shadow-lift)] animate-fade-in">

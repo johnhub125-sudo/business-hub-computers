@@ -18,7 +18,7 @@ const KIND_LABEL: Record<string, string> = { promotion: "Promotion", seasonal: "
  * Animated hero. Slides, texts, timing and the animation style are all managed in the admin
  * (Content → Carousel, Settings → Storefront & effects). The 3D look is CSS transforms only.
  */
-export function HeroCarousel({ slides, showcase = [], options = { effect: "cube", autoplay: true, seconds: 6 } }: { slides: Slide[]; showcase?: ShowcaseProduct[]; options?: CarouselOptions }) {
+export function HeroCarousel({ slides, showcase = [], options = { effect: "cube", autoplay: true, seconds: 6 }, compact = false }: { slides: Slide[]; showcase?: ShowcaseProduct[]; options?: CarouselOptions; compact?: boolean }) {
   const [i, setI] = useState(0);
   const [paused, setPaused] = useState(!options.autoplay);
   const [hover, setHover] = useState(false);
@@ -41,7 +41,7 @@ export function HeroCarousel({ slides, showcase = [], options = { effect: "cube"
     <section
       aria-roledescription="carousel"
       aria-label="Featured promotions"
-      className="hero relative overflow-hidden rounded-3xl bg-brand-950"
+      className={cn("hero relative overflow-hidden rounded-3xl bg-brand-950", compact && "lg:h-full")}
       data-effect={options.effect}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -59,7 +59,7 @@ export function HeroCarousel({ slides, showcase = [], options = { effect: "cube"
         if (Math.abs(dx) > 48) go(dx < 0 ? 1 : -1);
       }}
     >
-      <div className="hero-stage relative aspect-[4/5] sm:aspect-[16/8] lg:aspect-[16/6.2]">
+      <div className={cn("hero-stage relative aspect-[4/5] sm:aspect-[16/8]", compact ? "lg:aspect-auto lg:h-full lg:min-h-[400px]" : "lg:aspect-[16/6.2]")}>
         {slides.map((s, idx) => (
           <div
             key={s.id}
@@ -75,12 +75,12 @@ export function HeroCarousel({ slides, showcase = [], options = { effect: "cube"
               <Image src={s.desktopImage} alt="" fill priority={idx === 0} loading={idx === 0 ? undefined : "lazy"} sizes="100vw" unoptimized={s.desktopImage.endsWith(".svg")} className="object-cover object-right sm:object-center" />
             </picture>
             <div className={cn("absolute inset-0 bg-gradient-to-t from-brand-950/95 via-brand-950/55 to-brand-950/10 sm:bg-gradient-to-r sm:from-brand-950/90 sm:via-brand-950/55", product ? "sm:to-brand-950/70" : "sm:to-transparent")} />
-            <div className="absolute inset-0 flex items-end p-6 sm:items-center sm:p-10 lg:p-14">
-              <div className="max-w-xl text-white">
+            <div className={cn("absolute inset-0 flex items-end p-6 sm:items-center sm:p-10", compact ? "lg:p-10" : "lg:p-14")}>
+              <div className={cn("max-w-xl text-white", compact && product && "sm:max-w-[56%]")}>
                 <span className="hero-in inline-block rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-accent-100 ring-1 ring-white/20 backdrop-blur" style={{ animationDelay: "120ms" }}>
                   {KIND_LABEL[s.kind] ?? "Featured"}
                 </span>
-                <h2 className="hero-in mt-3 font-display text-3xl font-extrabold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl" style={{ animationDelay: "220ms" }}>
+                <h2 className={cn("hero-in mt-3 font-display text-3xl font-extrabold leading-[1.1] tracking-tight sm:text-4xl", compact ? "lg:text-[2.6rem]" : "lg:text-5xl")} style={{ animationDelay: "220ms" }}>
                   {s.title}
                 </h2>
                 {s.subtitle && (
@@ -105,7 +105,7 @@ export function HeroCarousel({ slides, showcase = [], options = { effect: "cube"
 
         {/* Floating 3D product: cycles through Featured products, one per slide. */}
         {product && (
-          <div className="pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-end pr-4 sm:inset-y-0 sm:left-auto sm:right-[4%] sm:top-0 sm:w-[38%] sm:items-center sm:justify-center sm:pr-0 lg:right-[7%] lg:w-[30%]">
+          <div className={cn("pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-end pr-4 sm:inset-y-0 sm:left-auto sm:right-[4%] sm:top-0 sm:w-[38%] sm:items-center sm:justify-center sm:pr-0", compact ? "lg:right-[4%] lg:w-[34%]" : "lg:right-[7%] lg:w-[30%]")}>
             <Link key={product.id} href={`/products/${product.slug}`} className="hero-product pointer-events-auto block w-[36%] max-w-[140px] sm:w-full sm:max-w-[340px]" aria-label={`${product.name} — ${formatMoney(product.price)}`}>
               <Tilt max={14} className="rounded-[2rem]">
                 <div className="float-3d relative">

@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { HeroCarousel } from "@/components/store/hero-carousel";
+import { BrandStrip, BudgetStrip, DepartmentSegments, HomeTop } from "@/components/store/home-blocks";
 import { JsonLd, siteUrl } from "@/components/json-ld";
 import {
   AboutSection,
-  CategoriesSection,
-  CategoryTabsSection,
+  CategoriesSection,
   CollectionsSection,
   ContactSection,
   GallerySection,
@@ -46,20 +46,38 @@ export default async function HomePage() {
   // Products with a real photo lead the showcase.
   const showcase = [...featured].sort((a, b) => Number(a.image.startsWith("/product-art/")) - Number(b.image.startsWith("/product-art/"))).slice(0, 6).map((p) => ({ id: p.id, name: p.name, slug: p.slug, image: p.image, price: p.salePrice ?? p.listPrice, brand: p.brand }));
 
+  const hasTabs = sections.some((s) => s.type === "category_tabs");
   const render = (s: Section) => {
     switch (s.type) {
       case "hero":
-        return <HeroCarousel slides={slides} showcase={showcase} options={{ effect: storefront.carouselEffect, autoplay: storefront.carouselAutoplay, seconds: storefront.carouselSeconds }} />;
+        return (
+          <HomeTop>
+            <HeroCarousel compact slides={slides} showcase={showcase} options={{ effect: storefront.carouselEffect, autoplay: storefront.carouselAutoplay, seconds: storefront.carouselSeconds }} />
+          </HomeTop>
+        );
       case "trust_bar":
         return <TrustBar />;
       case "categories":
-        return <CategoriesSection s={s} />;
+        // Department rows follow the categories when the page has no "category tabs" block of its own.
+        return (
+          <div className="space-y-10 sm:space-y-14">
+            <CategoriesSection s={s} />
+            <BudgetStrip />
+            {!hasTabs && <DepartmentSegments wished={wished} />}
+            {!hasTabs && <BrandStrip />}
+          </div>
+        );
       case "product_rail":
         return <RailSection s={s} wished={wished} />;
       case "collections":
         return <CollectionsSection s={s} />;
       case "category_tabs":
-        return <CategoryTabsSection s={s} wished={wished} />;
+        return (
+          <div className="space-y-10 sm:space-y-14">
+            <DepartmentSegments wished={wished} />
+            <BrandStrip />
+          </div>
+        );
       case "services":
         return <ServicesSection s={s} id="services" />;
       case "setups":

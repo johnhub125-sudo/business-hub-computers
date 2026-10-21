@@ -1,4 +1,5 @@
-import { PackageSearch, SlidersHorizontal } from "lucide-react";
+import { PackageSearch, SlidersHorizontal, X } from "lucide-react";
+import { formatMoney } from "@/lib/money";
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui/button";
 import { Breadcrumbs, EmptyState, Pagination } from "@/components/ui/misc";
@@ -6,6 +7,7 @@ import { FACET_OPTIONS, getNavigation, listProducts, SORTS, type ProductFilters,
 import { getCurrentUser } from "@/server/session";
 import { wishlistProductIds } from "@/server/services/wishlist";
 import { ProductGrid } from "./product-card";
+import { DetailsClose } from "./details-close";
 import { SortSelect } from "./sort-select";
 
 type SP = Record<string, string | string[] | undefined>;
@@ -25,6 +27,8 @@ export function parseFilters(sp: SP): ProductFilters {
   const maxN = num(sp.max);
   return {
     q: one("q")?.slice(0, 100),
+    // Department picked in the search bar.
+    category: one("cat")?.slice(0, 80) || undefined,
     sub: one("sub")?.slice(0, 80),
     brand: arr(sp.brand),
     condition: arr(sp.condition),
@@ -82,6 +86,39 @@ export async function CatalogListing({
   const activeCount = [filters.brand?.length, filters.ram?.length, filters.storage?.length, filters.processor?.length, filters.screen?.length, filters.min != null, filters.max != null, filters.inStock, filters.warranty, filters.rating, filters.discounted, !fixed.condition && filters.condition?.length].filter(Boolean).length;
   const currentCategory = nav.allCategories.find((c) => c.slug === (fixed.category ?? filters.category));
   const subcats = currentCategory ? nav.allCategories.filter((c) => c.parentId === currentCategory.id) : [];
+  // Computer specifications only where they mean something.
+  const dept = (currentCategory?.name ?? "").toLowerCase();
+  const specFacets = (["ram", "storage", "processor", "screen"] as const).filter((k) =>
+    !currentCategory || /computer|laptop|desktop|workstation|monitor|notebook|book|gaming/.test(dept) ? true : /phone|tablet|mobile/.test(dept) ? k !== "processor" : false,
+  );
+
+  // Removable chips for every filter in use.
+  const listParam = (k: "brand" | "condition" | "ram" | "storage" | "processor" | "screen", v: string) => {
+    const rest = (filters[k] ?? []).filter((x) => x !== v);
+    return qs({ [k]: rest.length ? rest.join(",") : undefined, page: undefined });
+  };
+  const brandName = (slug: string) => nav.brands.find((b) => b.slug === slug)?.name ?? slug;
+  const condName = (slug: string) => nav.conditions.find((c) => c.slug === slug)?.name ?? slug;
+  const chips: { label: string; href: string }[] = [
+    ...(filters.sub ? [{ label: subcats.find((c) => c.slug === filters.sub)?.name ?? filters.sub, href: qs({ sub: undefined, page: undefined }) }] : []),
+    ...(filters.brand ?? []).map((b) => ({ label: brandName(b), href: listParam("brand", b) })),
+    ...(fixed.condition ? [] : (filters.condition ?? []).map((c) => ({ label: condName(c), href: listParam("condition", c) }))),
+    ...(filters.min != null || filters.max != null
+      ? [{ label: filters.min != null && filters.max != null ? `${formatMoney(filters.min)} – ${formatMoney(filters.max)}` : filters.min != null ? `From ${formatMoney(filters.min)}` : `Up to ${formatMoney(filters.max!)}`, href: qs({ min: undefined, max: undefined, page: undefined }) }]
+      : []),
+    ...(["ram", "storage", "processor", "screen"] as const).flatMap((k) => (filters[k] ?? []).map((v) => ({ label: v, href: listParam(k, v) }))),
+    ...(filters.inStock ? [{ label: "In stock", href: qs({ stock: undefined, page: undefined }) }] : []),
+    ...(filters.discounted ? [{ label: "On discount", href: qs({ discount: undefined, page: undefined }) }] : []),
+    ...(filters.warranty ? [{ label: "1+ year warranty", href: qs({ warranty: undefined, page: undefined }) }] : []),
+    ...(filters.rating ? [{ label: `${filters.rating}★ & above`, href: qs({ rating: undefined, page: undefined }) }] : []),
+  ];
+  const PRICE_BANDS = [
+    { label: "Under ₦100k", max: 100_000 },
+    { label: "₦100k–300k", min: 100_000, max: 300_000 },
+    { label: "₦300k–600k", min: 300_000, max: 600_000 },
+    { label: "₦600k–1M", min: 600_000, max: 1_000_000 },
+    { label: "Above ₦1M", min: 1_000_000 },
+  ];
 
   const facets = (
     <form method="get" action={basePath} className="space-y-6">
@@ -131,6 +168,16 @@ export async function CatalogListing({
       )}
       <fieldset>
         <legend className="mb-2 text-sm font-bold">Price (₦)</legend>
+        <div className="mb-2.5 flex flex-wrap gap-1.5">
+          {PRICE_BANDS.map((b) => {
+            const on = (filters.min ?? null) === (b.min != null ? b.min * 100 : null) && (filters.max ?? null) === (b.max != null ? b.max * 100 : null);
+            return (
+              <Link key={b.label} href={qs({ min: b.min != null ? String(b.min) : undefined, max: b.max != null ? String(b.max) : undefined, page: undefined })} className={`rounded-lg border px-2.5 py-1 text-[12.5px] font-medium ${on ? "border-brand-600 bg-brand-50 text-brand-700" : "border-line hover:border-brand-300"}`}>
+                {b.label}
+              </Link>
+            );
+          })}
+        </div>
         <div className="flex items-center gap-2">
           <input name="min" type="number" min={0} inputMode="numeric" placeholder="Min" defaultValue={filters.min != null ? filters.min / 100 : ""} aria-label="Minimum price" className="h-10 w-full rounded-lg border border-line px-2.5 text-sm" />
           <span className="text-muted">–</span>
@@ -149,7 +196,7 @@ export async function CatalogListing({
           </div>
         </fieldset>
       )}
-      {(["ram", "storage", "processor", "screen"] as const).map((k) => (
+      {specFacets.map((k) => (
         <fieldset key={k}>
           <legend className="mb-2 text-sm font-bold">{{ ram: "RAM", storage: "Storage", processor: "Processor", screen: "Screen size" }[k]}</legend>
           <div className="flex flex-wrap gap-1.5">
@@ -225,11 +272,34 @@ export async function CatalogListing({
                 <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-xl border border-line px-3 text-sm font-semibold">
                   <SlidersHorizontal className="size-4" aria-hidden /> Filters{activeCount ? ` (${activeCount})` : ""}
                 </summary>
-                <div className="fixed inset-x-0 bottom-0 top-auto z-50 max-h-[85dvh] overflow-y-auto rounded-t-3xl border-t border-line bg-white p-5 shadow-2xl">{facets}</div>
+                <DetailsClose label="Close filters" className="fixed inset-0 z-50 cursor-default bg-slate-950/40 backdrop-blur-[2px]" />
+                <div className="fixed inset-x-0 bottom-0 top-auto z-50 max-h-[85dvh] overflow-y-auto rounded-t-3xl border-t border-line bg-white p-5 pt-3 shadow-2xl">
+                  <div className="sticky -top-3 z-10 -mx-5 mb-3 flex items-center justify-between border-b border-line bg-white px-5 py-3">
+                    <span className="font-bold">Filters</span>
+                    <DetailsClose label="Close filters" className="grid size-8 place-items-center rounded-full bg-surface">
+                      <X className="size-4" aria-hidden />
+                    </DetailsClose>
+                  </div>
+                  {facets}
+                </div>
               </details>
               <SortSelect value={filters.sort ?? (filters.q ? "relevance" : "newest")} options={Object.entries(SORTS).filter(([k]) => filters.q || k !== "relevance")} />
             </div>
           </div>
+          {chips.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2" aria-label="Active filters">
+              {chips.map((c) => (
+                <Link key={c.label + c.href} href={c.href} className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 py-1 pl-3 pr-2 text-[13px] font-medium text-brand-800 hover:border-brand-400" aria-label={`Remove filter ${c.label}`}>
+                  {c.label} <X className="size-3.5" aria-hidden />
+                </Link>
+              ))}
+              {chips.length > 1 && (
+                <Link href={basePath + (filters.q ? `?q=${encodeURIComponent(filters.q)}` : "")} className="text-[13px] font-semibold text-muted underline-offset-2 hover:text-ink hover:underline">
+                  Clear all
+                </Link>
+              )}
+            </div>
+          )}
           {result.items.length ? (
             <>
               <ProductGrid items={result.items} wished={wished} className="xl:grid-cols-4" />

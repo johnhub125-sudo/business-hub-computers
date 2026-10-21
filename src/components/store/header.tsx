@@ -45,7 +45,7 @@ export async function SiteHeader() {
           <Link href="/" className="shrink-0" aria-label={`${company.name} — home`}>
             <Image src={company.logo} alt={company.name} width={640} height={170} priority className="h-9 w-auto sm:h-11" />
           </Link>
-          <SearchBox className="hidden flex-1 md:block" />
+          <SearchBox className="hidden flex-1 md:block" departments={nav.categories.map((c) => ({ slug: c.slug, name: c.name }))} />
           <nav aria-label="Account" className="ml-auto flex items-center gap-1 sm:gap-2">
             <Link href={me ? "/account" : "/login"} className="hidden items-center gap-2 rounded-xl px-2.5 py-2 hover:bg-surface sm:flex">
               <User className="size-5 text-brand-700" aria-hidden />

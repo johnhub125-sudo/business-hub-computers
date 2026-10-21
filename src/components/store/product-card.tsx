@@ -89,7 +89,10 @@ export function ProductCard({ p, wished = false, priority = false }: { p: Produc
           <GitCompareArrows className="size-4" />
         </button>
       </div>
-      <Link href={`/products/${p.slug}`} className="relative block aspect-square overflow-hidden bg-surface" tabIndex={-1} aria-hidden>
+      <Link href={`/products/${p.slug}`} className="relative block aspect-square overflow-hidden bg-white" tabIndex={-1} aria-hidden>
+        {p.salePrice != null && p.salePrice < p.listPrice && (
+          <span className="absolute bottom-2 left-2 z-[1] rounded-lg bg-accent-500 px-2 py-0.5 text-[12px] font-extrabold text-white shadow-sm">-{discountPercent(p.listPrice, p.salePrice)}%</span>
+        )}
         <ProductImage src={p.image} alt="" fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw" priority={priority} className="p-2.5 transition duration-300 group-hover:scale-[1.05]" />
       </Link>
       <div className="flex flex-1 flex-col p-3 sm:p-3.5">
@@ -99,16 +102,13 @@ export function ProductCard({ p, wished = false, priority = false }: { p: Produc
             {p.name}
           </Link>
         </h3>
-        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
-          {p.ratingCount > 0 ? (
-            <>
-              <Stars value={rating} size={12} />
-              <span>({p.ratingCount})</span>
-            </>
-          ) : (
-            <span className="text-slate-400">No reviews yet</span>
-          )}
-        </div>
+        {p.highlights && <p className="mt-1 line-clamp-1 text-[12px] text-muted">{p.highlights}</p>}
+        {p.ratingCount > 0 && (
+          <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
+            <Stars value={rating} size={12} />
+            <span>({p.ratingCount})</span>
+          </div>
+        )}
         <div className="mt-2">
           <Price list={p.listPrice} sale={p.salePrice} size="sm" />
           {needsOptions && <p className="text-[11.5px] text-muted">{p.variantCount} configurations</p>}
