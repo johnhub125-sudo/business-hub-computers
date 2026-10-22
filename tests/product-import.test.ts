@@ -133,7 +133,7 @@ describe("Excel product import", () => {
       { name: "hp probook 440", category: "Computers", condition: "Brand New", price: 410000, stock: "3 pcs" },
       { name: "Samsung Galaxy A15", category: "Phones", condition: "tokunbo", price: "250k" },
       { category: "Computers", price: 1000 },
-      { name: "Mystery item" },
+      { name: "Mystery item", warranty: "6 months" },
     ]);
     const check = await importProducts(rows, staff, true);
     expect(check).toMatchObject({ ok: true, count: 4 });
@@ -383,5 +383,31 @@ describe("General template: computer series typed as a category", () => {
     expect(cats.find((c) => c.id === p.categoryId)!.name).toBe("Computers");
     expect(cats.find((c) => c.id === p.subcategoryId)).toMatchObject({ name: "HP EliteBook" });
     expect(cats.filter((c) => !c.parentId).map((c) => c.name).sort()).toEqual(["Computers", "Printers"]);
+  });
+});
+
+describe("Products uploaded without a quantity", () => {
+  beforeEach(async () => {
+    await resetDb();
+    staff.id = await makeUser({ userType: "staff" });
+    await seedCatalogue();
+  });
+  const laptop = { category: "Computers", condition: "Brand New", price: 845000 };
+
+  it("warns before import, skips section headings, and fills 1 in stock only when asked", async () => {
+    const rows = await fillTemplate([{ name: "BRAND NEW" }, { name: "HP 240R Core 5", ...laptop }, { name: "HP ProBook 4 G1i", ...laptop, stock: 3 }]);
+    const check = await importProducts(rows, staff, true);
+    expect(check.errors).toEqual([{ row: 2, message: "skipped — “BRAND NEW” looks like a section heading (no price or details)" }]);
+    expect(check.notes[0]).toMatch(/^⚠ 1 product\(s\) have no Stock quantity.*HP 240R/);
+
+    await importProducts(rows, staff, false);
+    const byName = async (n: string) => (await db.select().from(products)).find((p) => p.name === n)!;
+    expect(await stockOf((await byName("HP 240R Core 5")).id)).toBe(0);
+
+    // Re-import with the box ticked: the empty one gets 1, real stock (3) is never lowered.
+    await importProducts(await fillTemplate([{ name: "HP 240R Core 5", ...laptop }, { name: "HP ProBook 4 G1i", ...laptop }]), staff, false, { blankStockAsOne: true });
+    expect(await stockOf((await byName("HP 240R Core 5")).id)).toBe(1);
+    expect(await stockOf((await byName("HP ProBook 4 G1i")).id)).toBe(3);
+    expect(await db.select().from(products)).toHaveLength(2);
   });
 });

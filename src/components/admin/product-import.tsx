@@ -78,6 +78,9 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
           <a href="/admin/products-template?products=1" download className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold hover:bg-surface">
             <Download className="size-4" aria-hidden /> Export my products to Excel
           </a>
+          <a href="/admin/products-template?products=1&out=1" download className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-900 hover:bg-amber-100">
+            <Download className="size-4" aria-hidden /> Export out-of-stock products
+          </a>
           <p className="mt-2 text-xs text-muted">The export holds your current products with their serial numbers. Edit it, add serial numbers, and import it back.</p>
         </li>
         <li className="rounded-xl border border-line p-4 md:col-span-2">
@@ -107,8 +110,14 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
             <Button type="button" size="sm" disabled={!checked || pending} loading={pending && checked} onClick={() => submit(false)}>
               Import {checked && result ? `${result.count} product${result.count === 1 ? "" : "s"}` : ""}
             </Button>
+            <label className="flex w-full items-start gap-2 text-[13px] text-ink">
+              <input type="checkbox" name="blankStockAsOne" value="1" className="mt-0.5 size-4 accent-brand-700" onChange={() => setChecked(false)} />
+              <span>
+                Put 1 in stock where the quantity is blank <span className="text-muted">(products with no Stock quantity and no serial numbers; never lowers existing stock)</span>
+              </span>
+            </label>
           </form>
-          <p className="mt-2 text-xs text-muted">Nothing is saved until every row passes the check. A row with the same name and condition as an existing product updates it.</p>
+          <p className="mt-2 text-xs text-muted">A row with the same name and condition as an existing product updates it. Products with no Stock quantity and no serial numbers show as “Out of stock” unless you tick the box above.</p>
         </li>
       </ol>
 
@@ -155,7 +164,7 @@ export function ProductImport({ onClose, className }: { onClose?: () => void; cl
           {result.notes.length > 0 && (
             <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pl-6 text-[13px]">
               {result.notes.map((n, i) => (
-                <li key={i} className={n.startsWith("Row ") ? "text-emerald-900/80" : "font-medium"}>
+                <li key={i} className={n.startsWith("⚠") ? "-ml-6 my-1.5 rounded-lg bg-amber-100 px-3 py-2 font-semibold text-amber-900" : n.startsWith("Row ") ? "text-emerald-900/80" : "font-medium"}>
                   {n}
                 </li>
               ))}

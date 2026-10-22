@@ -336,7 +336,11 @@ export type ImportResult = { ok: boolean; errors: { row: number; message: string
 const MAX_IMPORT_ROWS = 2000;
 const clip = (s: string | undefined, n: number) => (s ?? "").replace(/\s+$/g, "").trim().slice(0, n);
 
-export async function importProducts(input: Record<string, string>[], staff: Pick<StaffContext, "id" | "email" | "roleLabel">, dryRun: boolean): Promise<ImportResult> {
+/**
+ * `blankStockAsOne`: a product with neither a Stock quantity nor serial numbers gets 1 in stock
+ * (only where the shop has none), instead of showing "Out of stock". Staff choose this on upload.
+ */
+export async function importProducts(input: Record<string, string>[], staff: Pick<StaffContext, "id" | "email" | "roleLabel">, dryRun: boolean, opts: { blankStockAsOne?: boolean } = {}): Promise<ImportResult> {
   if (!input.length) throw new UserError("The file has no product rows. Put one product on each row under the headings.");
   const rows = input.slice(0, MAX_IMPORT_ROWS);
   const [cats, conds, brs] = await Promise.all([db.select().from(categories), db.select().from(productConditions).orderBy(asc(productConditions.sortOrder)), db.select().from(brands)]);
@@ -440,6 +444,12 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
     if (!name) {
       // A row with details but no name cannot become a product.
       if (Object.keys(r).some((k) => k !== "__row" && r[k]?.trim())) errors.push({ row, message: "skipped — no product name" });
+      return;
+    }
+    // A row with only a name ("BRAND NEW", "MONITORS") is a section heading people put in their sheet, not a product.
+    const details = ["sku", "category", "subcategory", "brand", "condition", "price", "discount_price", "purchase_price", "stock", "serial_numbers", "short_description", "description", "specifications", "warranty", "dropship_partner"];
+    if (!details.some((k) => r[k]?.trim())) {
+      errors.push({ row, message: `skipped — “${name}” looks like a section heading (no price or details)` });
       return;
     }
     if ((r.name ?? "").trim().length > 200) fix(row, "product name shortened to 200 characters");
@@ -569,6 +579,14 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
   if (newBrands.size) notes.push(`${newBrands.size} new brand(s) ${dryRun ? "will be" : "were"} created: ${[...newBrands.values()].join(", ")}.`);
   const withSerials = parsed.filter((p) => p.serials.length);
   if (withSerials.length) notes.push(`${withSerials.reduce((n, p) => n + p.serials.length, 0)} serial number(s) on ${withSerials.length} product(s) counted as stock.`);
+  // Never let products go "Out of stock" silently because nobody entered a quantity.
+  const noQuantity = parsed.filter((p) => p.stock === undefined && !p.serials.length && !p.dropship_partner);
+  const fillBlank = (p: (typeof parsed)[number]) => Boolean(opts.blankStockAsOne) && noQuantity.includes(p);
+  if (noQuantity.length) {
+    const list = noQuantity.slice(0, 8).map((p) => `row ${p.row} ${p.name.slice(0, 40)}`).join("; ") + (noQuantity.length > 8 ? `; …and ${noQuantity.length - 8} more` : "");
+    if (opts.blankStockAsOne) notes.unshift(`${noQuantity.length} product(s) had no Stock quantity or serial numbers — ${dryRun ? "they will get" : "they got"} 1 in stock (only where the shop had none). Update the real quantity later.`);
+    else notes.unshift(`⚠ ${noQuantity.length} product(s) have no Stock quantity and no Serial numbers, so customers will see them as “Out of stock”: ${list}. Fill Stock quantity or Serial numbers, or tick “Put 1 in stock where the quantity is blank”.`);
+  }
   if (fixes.length) notes.push(`${fixes.length} correction(s) made automatically:`, ...fixes.slice(0, 200), ...(fixes.length > 200 ? [`…and ${fixes.length - 200} more.`] : []));
   if (!parsed.length) return { ok: false, errors: errors.length ? errors : [{ row: 0, message: "No products found. Put the product name in a column headed “Product name”." }], notes, count: 0, created: 0, updated: 0 };
   if (dryRun) return { ok: true, errors, notes, count: parsed.length, created: 0, updated: 0 };
@@ -661,16 +679,18 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
           } else if (variants.length > 1) {
             notes.push(`${p.name}: has several variants, so its serial numbers were not added.`);
           }
-        } else if (p.stock !== undefined && existing.id) {
+        } else if ((p.stock !== undefined || fillBlank(p)) && existing.id) {
           const variants = await tx.select({ id: productVariants.id, onHand: inventory.onHand }).from(productVariants).leftJoin(inventory, eq(inventory.variantId, productVariants.id)).where(and(eq(productVariants.productId, existing.id), eq(productVariants.isActive, true)));
           if (variants.length === 1) {
-            const delta = p.stock - (variants[0].onHand ?? 0);
+            // A blank quantity only fills a product that has none; it never lowers real stock.
+            const target = p.stock ?? Math.max(1, variants[0].onHand ?? 0);
+            const delta = target - (variants[0].onHand ?? 0);
             if (delta !== 0) {
               try {
                 await tx.transaction((sp) => adjustStock(sp, { variantId: variants[0].id, delta, type: "correction", referenceType: "import", referenceId: existing.id, userId: staff.id, note: "Stock set by product import" }));
                 stockSet++;
               } catch {
-                notes.push(`${p.name}: stock was not changed because ${p.stock} is below the units already reserved for orders.`);
+                notes.push(`${p.name}: stock was not changed because ${target} is below the units already reserved for orders.`);
               }
             }
           } else if (variants.length > 1) {
@@ -699,7 +719,7 @@ export async function importProducts(input: Record<string, string>[], staff: Pic
           await tx.insert(productSerials).values(p.serials.map((serial) => ({ productId: np.id, serial })));
           serialsAdded += p.serials.length;
         }
-        const opening = p.serials.length || p.stock || 0;
+        const opening = p.serials.length || p.stock || (fillBlank(p) ? 1 : 0);
         if (opening > 0) await adjustStock(tx, { variantId: v.id, delta: opening, type: "purchase", referenceType: "import", referenceId: np.id, userId: staff.id, note: "Import opening stock" });
         created++;
       }

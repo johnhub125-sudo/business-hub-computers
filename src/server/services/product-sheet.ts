@@ -71,7 +71,7 @@ const colLetter = (n: number) => {
 };
 
 /** Current products as template rows, so the sheet can be edited in Excel and imported back. */
-async function currentProductRows(): Promise<Record<string, string | number>[]> {
+async function currentProductRows(outOfStock = false): Promise<Record<string, string | number>[]> {
   const [rows, serials, cats] = await Promise.all([
     db
       .select({
@@ -94,7 +94,9 @@ async function currentProductRows(): Promise<Record<string, string | number>[]> 
   for (const s of serials) bySerial.set(s.productId, [...(bySerial.get(s.productId) ?? []), s.serial]);
   const yn = (v: boolean) => (v ? "Yes" : "No");
   const blankable = (o: Record<string, string | number | null | undefined>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v != null && v !== "")) as Record<string, string | number>;
-  return rows.map(({ p, brand, condition, stock }) => {
+  // "Out of stock" export: products with nothing on hand, ready for staff to type the real quantity.
+  const picked = outOfStock ? rows.filter((r) => Number(r.stock) <= 0 && !bySerial.has(r.p.id) && r.p.fulfilment !== "dropship") : rows;
+  return picked.map(({ p, brand, condition, stock }) => {
     const sn = bySerial.get(p.id) ?? [];
     return blankable({
       sku: p.sku,
@@ -107,7 +109,7 @@ async function currentProductRows(): Promise<Record<string, string | number>[]> 
       discount_price: p.discountPrice != null ? p.discountPrice / 100 : null,
       purchase_price: p.purchasePrice ? p.purchasePrice / 100 : null,
       // With serial numbers the count is the quantity, so Stock stays blank (and is left unchanged on import).
-      stock: sn.length || p.fulfilment === "dropship" ? null : stock,
+      stock: sn.length || p.fulfilment === "dropship" || (outOfStock && Number(stock) <= 0) ? null : stock,
       serial_numbers: sn.join(", "),
       short_description: p.shortDescription,
       description: p.description,
@@ -129,10 +131,10 @@ async function currentProductRows(): Promise<Record<string, string | number>[]> 
  * With `withProducts`, the sheet comes filled with the current products (and a SKU column that
  * identifies each one), ready to edit and import back.
  */
-export async function buildProductTemplate(opts: { withProducts?: boolean; template?: string } = {}): Promise<Buffer> {
+export async function buildProductTemplate(opts: { withProducts?: boolean; template?: string; outOfStock?: boolean } = {}): Promise<Buffer> {
   const tpl = opts.withProducts ? undefined : templateById(opts.template);
   const SHEET_COLUMNS: Column[] = tpl ? departmentColumns(tpl) : opts.withProducts ? [{ key: "sku", header: "SKU", width: 18, help: "Identifies the product. Do not change it. Leave blank on a new row and one is created for you." }, ...TEMPLATE_COLUMNS] : TEMPLATE_COLUMNS;
-  const filled = opts.withProducts ? await currentProductRows() : [];
+  const filled = opts.withProducts ? await currentProductRows(opts.outOfStock) : [];
   const [cats, brs, conds] = await Promise.all([
     db.select({ id: categories.id, name: categories.name, parentId: categories.parentId }).from(categories).orderBy(asc(categories.sortOrder), asc(categories.name)),
     db.select({ name: brands.name }).from(brands).orderBy(asc(brands.name)),

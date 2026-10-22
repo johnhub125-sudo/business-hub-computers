@@ -85,7 +85,7 @@ export async function importProductsAction(fd: FormData) {
     if (!isExcel && !/.csv$/i.test(file.name) && !file.type.includes("csv")) throw new UserError("Please upload an Excel (.xlsx) or CSV file. An old .xls file must first be saved in Excel as “Excel Workbook (.xlsx)”.");
     const rows = isExcel ? await parseProductSheet(await file.arrayBuffer()) : parseProductCsv(await file.text());
     const dryRun = fd.get("dryRun") === "1";
-    const res = await importProducts(rows, staff, dryRun);
+    const res = await importProducts(rows, staff, dryRun, { blankStockAsOne: fd.get("blankStockAsOne") === "1" });
     if (!dryRun && res.created + res.updated > 0) {
       revalidatePath("/admin/products");
       revalidatePath("/", "layout");

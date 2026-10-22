@@ -15,12 +15,13 @@ export async function GET(req: Request) {
   const withProducts = params.get("products") === "1";
   // ?template=<id> → a department template (category fixed, its own specification columns).
   const tpl = templateById(params.get("template"));
-  const file = await buildProductTemplate({ withProducts, template: tpl?.id });
+  const outOfStock = withProducts && params.get("out") === "1";
+  const file = await buildProductTemplate({ withProducts, template: tpl?.id, outOfStock });
   await audit({ actor: staff, action: "product.template_downloaded", module: "Products", description: withProducts ? "Exported the products to Excel" : tpl ? `Downloaded the ${tpl.label} template` : "Downloaded the product import template" });
   return new Response(new Uint8Array(file), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${withProducts ? "business-hub-products" : tpl ? `business-hub-${tpl.id}-template` : "business-hub-products-template"}.xlsx"`,
+      "Content-Disposition": `attachment; filename="${outOfStock ? "business-hub-out-of-stock" : withProducts ? "business-hub-products" : tpl ? `business-hub-${tpl.id}-template` : "business-hub-products-template"}.xlsx"`,
       "Cache-Control": "private, no-store",
     },
   });
