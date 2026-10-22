@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 640" width="1600" height="640"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#050505"/><stop offset="0.6" stop-color="#141414"/><stop offset="1" stop-color="#2A1A00"/></linearGradient>
+     <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FDE68A"/><stop offset="0.5" stop-color="#F59E0B"/><stop offset="1" stop-color="#B45309"/></linearGradient>
+     <radialGradient id="glow" cx="0.75" cy="0.45" r="0.55"><stop offset="0" stop-color="#F59E0B" stop-opacity="0.35"/><stop offset="1" stop-color="#F59E0B" stop-opacity="0"/></radialGradient>
+     <filter id="sh" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#000" flood-opacity="0.55"/></filter></defs><rect width="1600" height="640" fill="url(#g)"/>
+     <rect width="1600" height="640" fill="url(#glow)"/>
+     <text x="1560" y="300" text-anchor="end" font-family="Arial Black, Arial, sans-serif" font-size="210" font-weight="900" fill="none" stroke="#F59E0B" stroke-opacity="0.22" stroke-width="3">BLACK</text>
+     <text x="1560" y="500" text-anchor="end" font-family="Arial Black, Arial, sans-serif" font-size="210" font-weight="900" fill="none" stroke="#F59E0B" stroke-opacity="0.22" stroke-width="3">FRIDAY</text>
+     <circle cx="1132" cy="356" r="1.3" fill="#FDE68A" opacity="0.50"/><circle cx="1090" cy="324" r="1.2" fill="#FDE68A" opacity="0.88"/><circle cx="1219" cy="266" r="1.7" fill="#FDE68A" opacity="0.82"/><circle cx="1279" cy="66" r="2.3" fill="#FDE68A" opacity="0.49"/><circle cx="1291" cy="115" r="2.5" fill="#FDE68A" opacity="0.64"/><circle cx="855" cy="50" r="3.4" fill="#FDE68A" opacity="0.93"/><circle cx="806" cy="287" r="3.5" fill="#FDE68A" opacity="0.46"/><circle cx="1069" cy="350" r="2.7" fill="#FDE68A" opacity="0.52"/><circle cx="850" cy="611" r="2.2" fill="#FDE68A" opacity="0.49"/><circle cx="1181" cy="218" r="1.4" fill="#FDE68A" opacity="0.81"/><circle cx="1009" cy="230" r="1.2" fill="#FDE68A" opacity="0.91"/><circle cx="910" cy="550" r="2.2" fill="#FDE68A" opacity="0.49"/><circle cx="1231" cy="261" r="3.0" fill="#FDE68A" opacity="0.74"/><circle cx="820" cy="154" r="2.2" fill="#FDE68A" opacity="0.40"/><circle cx="742" cy="267" r="2.8" fill="#FDE68A" opacity="0.74"/><circle cx="1541" cy="215" r="2.1" fill="#FDE68A" opacity="0.65"/><circle cx="1086" cy="523" r="2.2" fill="#FDE68A" opacity="0.61"/><circle cx="932" cy="162" r="2.9" fill="#FDE68A" opacity="0.43"/><circle cx="938" cy="480" r="3.2" fill="#FDE68A" opacity="0.93"/><circle cx="1516" cy="536" r="2.9" fill="#FDE68A" opacity="0.73"/><circle cx="1188" cy="34" r="1.8" fill="#FDE68A" opacity="0.56"/><circle cx="889" cy="256" r="2.8" fill="#FDE68A" opacity="0.79"/><circle cx="935" cy="594" r="1.0" fill="#FDE68A" opacity="0.57"/><circle cx="1215" cy="285" r="1.2" fill="#FDE68A" opacity="0.94"/><circle cx="1102" cy="543" r="2.5" fill="#FDE68A" opacity="0.63"/><circle cx="810" cy="496" r="3.3" fill="#FDE68A" opacity="0.51"/><circle cx="721" cy="113" r="2.8" fill="#FDE68A" opacity="0.77"/><circle cx="1281" cy="542" r="1.6" fill="#FDE68A" opacity="0.85"/><circle cx="848" cy="42" r="1.2" fill="#FDE68A" opacity="0.36"/><circle cx="1173" cy="518" r="3.2" fill="#FDE68A" opacity="0.44"/><circle cx="1135" cy="51" r="1.7" fill="#FDE68A" opacity="0.64"/><circle cx="756" cy="233" r="1.6" fill="#FDE68A" opacity="0.53"/><circle cx="1396" cy="102" r="1.4" fill="#FDE68A" opacity="0.35"/><circle cx="1249" cy="72" r="2.0" fill="#FDE68A" opacity="0.42"/><circle cx="1121" cy="269" r="1.0" fill="#FDE68A" opacity="0.80"/><circle cx="1097" cy="463" r="1.9" fill="#FDE68A" opacity="0.91"/><circle cx="1331" cy="404" r="1.7" fill="#FDE68A" opacity="0.57"/><circle cx="768" cy="549" r="1.2" fill="#FDE68A" opacity="0.39"/><circle cx="864" cy="202" r="1.1" fill="#FDE68A" opacity="0.71"/><circle cx="1087" cy="246" r="2.4" fill="#FDE68A" opacity="0.89"/>
+     
+    <g transform="translate(980 150) rotate(-12)" filter="url(#sh)">
+      <path d="M0 0 H230 L290 70 L230 140 H0 Z" fill="url(#gold)"/>
+      <circle cx="236" cy="70" r="12" fill="#0A0A0A"/>
+      <text x="22" y="78" font-family="Arial Black, Arial, sans-serif" font-size="58" font-weight="900" fill="#0A0A0A">-30%</text>
+      <text x="24" y="118" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#0A0A0A" letter-spacing="4">MEGA DEALS</text>
+    </g>
+     
+    <g transform="translate(1180 330) rotate(8)" filter="url(#sh)">
+      <path d="M0 0 H230 L290 70 L230 140 H0 Z" fill="#EF4444"/>
+      <circle cx="236" cy="70" r="12" fill="#0A0A0A"/>
+      <text x="22" y="78" font-family="Arial Black, Arial, sans-serif" font-size="58" font-weight="900" fill="#0A0A0A">-50%</text>
+      <text x="24" y="118" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#0A0A0A" letter-spacing="4">LIMITED</text>
+    </g>
+     
+    <g transform="translate(900 420) rotate(-4)" filter="url(#sh)">
+      <path d="M0 0 H230 L290 70 L230 140 H0 Z" fill="#FAFAFA"/>
+      <circle cx="236" cy="70" r="12" fill="#0A0A0A"/>
+      <text x="22" y="78" font-family="Arial Black, Arial, sans-serif" font-size="58" font-weight="900" fill="#0A0A0A">SALE</text>
+      <text x="24" y="118" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#0A0A0A" letter-spacing="4">ALL WEEK</text>
+    </g>
+     <rect x="0" y="630" width="1600" height="10" fill="url(#gold)"/></svg>

@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { contentPages } from "../src/server/db/schema/content";
+import { carouselSlides, contentPages, siteSettings } from "../src/server/db/schema/content";
 import { POLICY_PAGES } from "./policy-texts";
 
 /** SHA-256 of every default body that has shipped before. A page matching one of these was never edited. */
@@ -56,6 +56,25 @@ async function main() {
       }
     }
     console.log(`✓ policy pages: ${updated} updated, ${kept} left as edited`);
+
+    // Seasonal carousel slides: added once each (remembered in site_settings), then fully owned by
+    // Admin → Carousel. Editing or deleting one there is never undone by a later deploy.
+    const SEASONAL = [
+      { key: "black-friday-2026", kind: "discount", title: "Black Friday mega sale", subtitle: "Up to 50% off laptops, printers, power stations and accessories. One week only, while stock lasts.", ctaLabel: "Shop Black Friday deals", ctaUrl: "/deals", desktopImage: "/images/banners/festive-black-friday.svg", startsAt: new Date("2026-11-16T00:00:00+01:00"), endsAt: new Date("2026-12-01T23:59:59+01:00") },
+      { key: "christmas-2026", kind: "seasonal", title: "Merry Christmas from Business Hub", subtitle: "Gift the tech they will use every day — festive prices on laptops, phones and accessories.", ctaLabel: "Shop Christmas gifts", ctaUrl: "/deals", desktopImage: "/images/banners/festive-christmas.svg", startsAt: new Date("2026-12-02T00:00:00+01:00"), endsAt: new Date("2026-12-26T23:59:59+01:00") },
+      { key: "new-year-2027", kind: "seasonal", title: "Happy New Year 2027", subtitle: "Start the year with a faster laptop and reliable power. New stock and New Year offers inside.", ctaLabel: "See what is new", ctaUrl: "/products?sort=newest", desktopImage: "/images/banners/festive-new-year.svg", startsAt: new Date("2026-12-27T00:00:00+01:00"), endsAt: new Date("2027-01-07T23:59:59+01:00") },
+    ];
+    const [seen] = await db.select().from(siteSettings).where(eq(siteSettings.key, "content_seeded_slides"));
+    const done = new Set<string>((seen?.value as string[] | undefined) ?? []);
+    let added = 0;
+    for (const { key, ...slide } of SEASONAL) {
+      if (done.has(key)) continue;
+      await db.insert(carouselSlides).values({ ...slide, sortOrder: -10, isActive: true });
+      done.add(key);
+      added++;
+    }
+    if (added) await db.insert(siteSettings).values({ key: "content_seeded_slides", value: [...done] }).onConflictDoUpdate({ target: siteSettings.key, set: { value: [...done], updatedAt: new Date() } });
+    console.log(`✓ seasonal slides: ${added} added`);
   } finally {
     await pool.end();
   }
