@@ -71,6 +71,8 @@ export const SETTINGS_DEFAULTS = {
     cardTilt: true,
     scrollEffects: true,
     installPrompt: true,
+    /** Off: customers see only "In stock" / "Out of stock"; exact quantities stay in the admin. */
+    showStockCount: false,
     /** Look for real product photos in the background (needs BRAVE_SEARCH_API_KEY). */
     autoPhotos: true,
     photosVendorOnly: false,

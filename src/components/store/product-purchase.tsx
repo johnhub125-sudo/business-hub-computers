@@ -8,6 +8,7 @@ import { addToCartAction, toggleCompareAction, toggleWishlistAction } from "@/ap
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Price } from "./product-card";
+import { useStorePrefs } from "./store-prefs";
 
 type Variant = { id: string; name: string; sku: string; attributes: Record<string, string>; listPrice: number; salePrice: number | null; available: number; isDefault: boolean };
 
@@ -28,6 +29,7 @@ export function ProductPurchase({
   const initial = variants.find((v) => v.isDefault && v.available > 0) ?? variants.find((v) => v.available > 0) ?? variants[0];
   const [variantId, setVariantId] = useState(initial?.id);
   const [qty, setQty] = useState(1);
+  const { showStockCount } = useStorePrefs();
   const [isWished, setWished] = useState(wished);
   const [busy, setBusy] = useState<"cart" | "buy" | null>(null);
   const [pending, start] = useTransition();
@@ -93,9 +95,9 @@ export function ProductPurchase({
         </div>
       )}
 
-      <p className={cn("flex items-center gap-2 text-sm font-semibold", out ? "text-red-600" : v.available <= 3 ? "text-amber-700" : "text-emerald-700")}>
+      <p className={cn("flex items-center gap-2 text-sm font-semibold", out ? "text-red-600" : showStockCount && v.available <= 3 ? "text-amber-700" : "text-emerald-700")}>
         <span className={cn("size-2 rounded-full", out ? "bg-red-500" : v.available <= 3 ? "bg-amber-500" : "bg-emerald-500")} />
-        {out ? "Out of stock" : v.available <= 3 ? `Only ${v.available} left in stock` : "In stock, ready to ship"}
+        {out ? "Out of stock" : showStockCount && v.available <= 3 ? `Only ${v.available} left in stock` : "In stock, ready to ship"}
         <span className="font-normal text-muted">· SKU {v.sku}</span>
       </p>
 

@@ -81,7 +81,7 @@ export async function updateQuantity(itemId: string, quantity: number) {
   if (!Number.isInteger(quantity) || quantity > 20) throw new UserError("Choose a quantity between 1 and 20.");
   const [inv] = await db.select().from(inventory).where(eq(inventory.variantId, item.variantId));
   const available = Math.max(0, (inv?.onHand ?? 0) - (inv?.reserved ?? 0));
-  if (quantity > available) throw new UserError(available ? `Only ${available} available.` : "This item is out of stock.");
+  if (quantity > available) throw new UserError(available ? "Not enough in stock for that quantity. Please choose fewer." : "This item is out of stock.");
   await db.update(cartItems).set({ quantity, updatedAt: new Date() }).where(eq(cartItems.id, item.id));
 }
 

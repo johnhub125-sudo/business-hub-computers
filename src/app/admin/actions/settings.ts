@@ -57,6 +57,7 @@ const SCHEMAS = {
     cardTilt: bool,
     scrollEffects: bool,
     installPrompt: bool,
+    showStockCount: bool,
     autoPhotos: bool,
     photosVendorOnly: bool,
   }),

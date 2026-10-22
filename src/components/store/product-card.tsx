@@ -12,6 +12,7 @@ import { discountPercent, formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { ProductCardData } from "@/server/queries/catalog";
 import { ProductImage } from "./product-image";
+import { useStorePrefs } from "./store-prefs";
 
 export function Price({ list, sale, size = "md" }: { list: number; sale: number | null; size?: "sm" | "md" | "lg" }) {
   const has = sale != null && sale < list;
@@ -36,6 +37,7 @@ export function ProductCard({ p, wished = false, priority = false }: { p: Produc
   const [pending, start] = useTransition();
   const [busy, setBusy] = useState<"cart" | "buy" | null>(null);
   const out = p.stock <= 0;
+  const { showStockCount } = useStorePrefs();
   const needsOptions = p.variantCount > 1;
   const rating = Number(p.rating);
 
@@ -113,8 +115,8 @@ export function ProductCard({ p, wished = false, priority = false }: { p: Produc
           <Price list={p.listPrice} sale={p.salePrice} size="sm" />
           {needsOptions && <p className="text-[11.5px] text-muted">{p.variantCount} configurations</p>}
         </div>
-        <p className={cn("mt-1.5 text-[12px] font-medium", out ? "text-red-600" : p.stock <= 3 ? "text-amber-700" : "text-emerald-700")}>
-          {out ? "Out of stock" : p.stock <= 3 ? `Only ${p.stock} left` : "In stock"}
+        <p className={cn("mt-1.5 text-[12px] font-medium", out ? "text-red-600" : showStockCount && p.stock <= 3 ? "text-amber-700" : "text-emerald-700")}>
+          {out ? "Out of stock" : showStockCount && p.stock <= 3 ? `Only ${p.stock} left` : "In stock"}
         </p>
         <div className="relative z-10 mt-auto grid grid-cols-[1fr_auto] gap-1.5 pt-3">
           <button

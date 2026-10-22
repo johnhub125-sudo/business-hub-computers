@@ -8,6 +8,7 @@ import { applyCouponAction, removeCartItemAction, removeCouponAction, saveForLat
 import { Button, ButtonLink } from "@/components/ui/button";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { useStorePrefs } from "./store-prefs";
 import { ProductImage } from "./product-image";
 
 type Line = {
@@ -30,6 +31,7 @@ type Totals = { subtotal: number; productDiscount: number; couponDiscount: numbe
 
 function Row({ line, saved }: { line: Line; saved?: boolean }) {
   const [pending, start] = useTransition();
+  const { showStockCount } = useStorePrefs();
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) =>
     start(async () => {
       const r = await fn();
@@ -55,7 +57,7 @@ function Row({ line, saved }: { line: Line; saved?: boolean }) {
             {line.unitPrice < line.listPrice && <p className="text-xs text-muted line-through">{formatMoney(line.listPrice * line.quantity)}</p>}
           </div>
         </div>
-        {short && !saved && <p className="mt-1 text-xs font-semibold text-red-600">{line.available ? `Only ${line.available} available — please reduce quantity` : "Out of stock"}</p>}
+        {short && !saved && <p className="mt-1 text-xs font-semibold text-red-600">{line.available ? (showStockCount ? `Only ${line.available} available — please reduce quantity` : "Not enough in stock — please reduce the quantity") : "Out of stock"}</p>}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {!saved && (
             <div className="flex h-9 items-center rounded-lg border border-line">

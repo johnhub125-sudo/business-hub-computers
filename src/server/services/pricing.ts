@@ -173,7 +173,7 @@ export async function quote(opts: QuoteOptions, tx: Executor = db): Promise<Quot
       issues.push({
         variantId,
         code: "insufficient_stock",
-        message: available === 0 ? `${r.productName} is out of stock.` : `Only ${available} left of ${r.productName}.`,
+        message: available === 0 ? `${r.productName} is out of stock.` : `Not enough ${r.productName} in stock for that quantity.`,
       });
     }
     lines.push({
