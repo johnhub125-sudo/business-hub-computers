@@ -5,7 +5,7 @@ import { RoleEditor, StaffEditor } from "@/components/admin/staff-controls";
 import { AdminTabs, tabOf } from "@/components/admin/tabs";
 import { AdminHeader, EmptyRow, Panel, Table, type SP } from "@/components/admin/ui";
 import { Badge } from "@/components/ui/misc";
-import { DEPARTMENTS, SUPER_ADMIN } from "@/lib/permissions";
+import { DEPARTMENTS, DEVELOPER, SUPER_ADMIN } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
 import { db } from "@/server/db";
 import { permissions, rolePermissions, roles, staffProfiles, user, userRoles } from "@/server/db/schema";
@@ -30,6 +30,8 @@ export default async function StaffPage({ searchParams }: PageProps<"/admin/staf
   const assignments = staffRows.length ? await db.select().from(userRoles).where(inArray(userRoles.userId, staffRows.map((r) => r.u.id))) : [];
   const rolePerms = tab === "roles" ? await db.select().from(rolePermissions) : [];
   const roleList = allRoles.map((r) => ({ id: r.id, name: r.name, slug: r.slug }));
+  // Only the Developer can hand out the Developer role, so others are not offered it.
+  const assignable = roleList.filter((r) => r.slug !== DEVELOPER || me.isDeveloper);
 
   return (
     <div>
@@ -54,7 +56,7 @@ export default async function StaffPage({ searchParams }: PageProps<"/admin/staf
                 </td>
                 <td>{p.department ?? "—"}</td>
                 <td>
-                  {mine.length ? roleList.filter((r) => mine.includes(r.id)).map((r) => <Badge key={r.id} tone={r.slug === SUPER_ADMIN ? "brand" : "neutral"} className="mb-1 mr-1">{r.name}</Badge>) : p.requestedRole ? <span className="text-xs text-muted">Requested: {p.requestedRole}</span> : "—"}
+                  {mine.length ? roleList.filter((r) => mine.includes(r.id)).map((r) => <Badge key={r.id} tone={r.slug === DEVELOPER ? "danger" : r.slug === SUPER_ADMIN ? "brand" : "neutral"} className="mb-1 mr-1">{r.name}</Badge>) : p.requestedRole ? <span className="text-xs text-muted">Requested: {p.requestedRole}</span> : "—"}
                 </td>
                 <td>
                   <Badge tone={u.status === "active" ? "success" : u.status === "pending" ? "warning" : "danger"}>{p.approval === "rejected" ? "rejected" : u.status}</Badge>
@@ -63,7 +65,7 @@ export default async function StaffPage({ searchParams }: PageProps<"/admin/staf
                 <td className="text-xs text-muted">{tab === "pending" ? formatDateTime(p.createdAt) : u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Never"}</td>
                 <td>
                   {p.approval !== "rejected" && (
-                    <StaffEditor userId={u.id} roles={roleList} current={mine} department={p.department ?? ""} position={p.position ?? ""} departments={DEPARTMENTS} mode={tab === "pending" ? "approve" : "edit"} status={u.status} isSelf={u.id === me.id} />
+                    <StaffEditor userId={u.id} roles={assignable} current={mine} department={p.department ?? ""} position={p.position ?? ""} departments={DEPARTMENTS} mode={tab === "pending" ? "approve" : "edit"} status={u.status} isSelf={u.id === me.id} canResetPassword={u.id !== me.id && me.isSuperAdmin && (me.isDeveloper || !roleList.some((r) => mine.includes(r.id) && (r.slug === SUPER_ADMIN || r.slug === DEVELOPER)))} />
                   )}
                   {tab === "staff" && (
                     <Link href={`/admin/tasks/new?assignee=${u.id}`} className="mt-1 block text-right text-xs font-semibold text-brand-600 hover:underline">
@@ -85,11 +87,11 @@ export default async function StaffPage({ searchParams }: PageProps<"/admin/staf
                   <span className="font-bold">{r.name}</span> {r.isSystem && <Badge>built-in</Badge>}
                   <span className="block text-sm text-muted">{r.description}</span>
                 </span>
-                <span className="text-sm text-muted">{r.slug === SUPER_ADMIN ? "All permissions" : `${rolePerms.filter((rp) => rp.roleId === r.id).length} permission(s)`}</span>
+                <span className="text-sm text-muted">{r.slug === SUPER_ADMIN || r.slug === DEVELOPER ? "All permissions" : `${rolePerms.filter((rp) => rp.roleId === r.id).length} permission(s)`}</span>
               </summary>
               <div className="border-t border-line p-5">
                 <RoleEditor
-                  locked={r.slug === SUPER_ADMIN}
+                  locked={r.slug === SUPER_ADMIN || r.slug === DEVELOPER}
                   role={{ id: r.id, name: r.name, description: r.description ?? "", isSystem: r.isSystem, permissions: perms.filter((p) => rolePerms.some((rp) => rp.roleId === r.id && rp.permissionId === p.id)).map((p) => p.key) }}
                   allPermissions={perms}
                 />

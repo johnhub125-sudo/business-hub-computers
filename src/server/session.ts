@@ -3,7 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { ALL_PERMISSIONS, SUPER_ADMIN, type Permission } from "@/lib/permissions";
+import { ALL_PERMISSIONS, DEVELOPER, SUPER_ADMIN, type Permission } from "@/lib/permissions";
 import { auth } from "./auth";
 import { db } from "./db";
 import { permissions, rolePermissions, roles, staffProfiles, user, userRoles } from "./db/schema";
@@ -54,6 +54,8 @@ export type StaffContext = CurrentUser & {
   roles: { slug: string; name: string }[];
   permissions: Set<Permission>;
   isSuperAdmin: boolean;
+  /** Platform developer: Super Admin powers plus authority over Super Admin accounts. */
+  isDeveloper: boolean;
   approval: string | null;
   roleLabel: string;
 };
@@ -68,7 +70,8 @@ export const getStaffContext = cache(async (): Promise<StaffContext | null> => {
     .from(userRoles)
     .innerJoin(roles, eq(roles.id, userRoles.roleId))
     .where(eq(userRoles.userId, current.id));
-  const isSuperAdmin = roleRows.some((r) => r.slug === SUPER_ADMIN);
+  const isDeveloper = roleRows.some((r) => r.slug === DEVELOPER);
+  const isSuperAdmin = isDeveloper || roleRows.some((r) => r.slug === SUPER_ADMIN);
   let perms: Permission[] = [];
   if (isSuperAdmin) perms = ALL_PERMISSIONS;
   else if (roleRows.length) {
@@ -85,6 +88,7 @@ export const getStaffContext = cache(async (): Promise<StaffContext | null> => {
     roles: roleRows.map(({ slug, name }) => ({ slug, name })),
     permissions: new Set(perms),
     isSuperAdmin,
+    isDeveloper,
     approval: profile?.approval ?? null,
     roleLabel: roleRows.map((r) => r.name).join(", ") || "Staff",
   };
@@ -127,6 +131,12 @@ export async function requirePermission(...needed: Permission[]): Promise<StaffC
   for (const p of needed) {
     if (!s.permissions.has(p)) throw new ForbiddenError("You do not have permission to perform this action.");
   }
+  return s;
+}
+
+export async function requireDeveloper() {
+  const s = await requirePermission();
+  if (!s.isDeveloper) throw new ForbiddenError("Only the Developer can do this.");
   return s;
 }
 

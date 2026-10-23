@@ -3,11 +3,13 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
-import { SUPER_ADMIN, type Permission, PERMISSIONS } from "@/lib/permissions";
+import { randomInt } from "node:crypto";
+import { hashPassword } from "better-auth/crypto";
+import { DEVELOPER, SUPER_ADMIN, type Permission, PERMISSIONS } from "@/lib/permissions";
 import { slugify } from "@/lib/utils";
 import { audit, securityEvent } from "@/server/audit";
 import { db, type Tx } from "@/server/db";
-import { permissions, rolePermissions, roles, session, staffProfiles, user, userRoles } from "@/server/db/schema";
+import { account, permissions, rolePermissions, roles, session, staffProfiles, user, userRoles } from "@/server/db/schema";
 import { sendTemplateNow } from "@/server/email";
 import { runAction, UserError } from "@/server/errors";
 import { requirePermission } from "@/server/session";
@@ -22,6 +24,21 @@ async function superAdminIds(tx: Tx) {
   if (!role) return [];
   const rows = await tx.select({ userId: userRoles.userId }).from(userRoles).innerJoin(user, eq(user.id, userRoles.userId)).where(and(eq(userRoles.roleId, role.id), eq(user.status, "active")));
   return rows.map((r) => r.userId);
+}
+
+/** Role slugs held by a user. */
+async function roleSlugs(userId: string) {
+  return (await db.select({ slug: roles.slug }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(userRoles.userId, userId))).map((r) => r.slug);
+}
+
+/**
+ * Who may change whom: only a Developer may change a Developer account; only a Super Admin (or the
+ * Developer) may change a Super Admin account.
+ */
+async function assertCanManage(actor: { isSuperAdmin: boolean; isDeveloper: boolean }, targetId: string) {
+  const slugs = await roleSlugs(targetId);
+  if (slugs.includes(DEVELOPER) && !actor.isDeveloper) throw new UserError("Only the Developer can change a Developer account.");
+  if (slugs.includes(SUPER_ADMIN) && !actor.isSuperAdmin) throw new UserError("Only a Super Admin can change a Super Admin account.");
 }
 
 async function assertNotLastSuperAdmin(tx: Tx, userId: string) {
@@ -44,6 +61,8 @@ export async function approveStaffAction(userId: string, input: { roleIds: strin
     if (!target || target.userType !== "staff") throw new UserError("Staff member not found.");
     const [superRole] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, SUPER_ADMIN));
     if (superRole && roleIds.includes(superRole.id) && !staff.isSuperAdmin) throw new UserError("Only a Super Admin can grant Super Admin.");
+    const [devRole] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, DEVELOPER));
+    if (devRole && roleIds.includes(devRole.id) && !staff.isDeveloper) throw new UserError("Only the Developer can grant the Developer role.");
     const roleNames = (await db.select({ name: roles.name }).from(roles).where(inArray(roles.id, roleIds))).map((r) => r.name).join(", ");
     await db.transaction(async (tx) => {
       await tx.update(user).set({ status: "active", updatedAt: new Date() }).where(eq(user.id, target.id));
@@ -67,6 +86,7 @@ export async function setStaffStatusAction(userId: string, action: "reject" | "a
     if (id === staff.id && action !== "activate") throw new UserError("You can't change your own account status.");
     const [target] = await db.select().from(user).where(eq(user.id, id));
     if (!target || target.userType !== "staff") throw new UserError("Staff member not found.");
+    await assertCanManage(staff, id);
     await db.transaction(async (tx) => {
       if (action !== "activate") await assertNotLastSuperAdmin(tx, id);
       const map = { reject: "rejected", activate: "active", deactivate: "inactive", suspend: "suspended", delete: "deleted" } as const;
@@ -93,6 +113,9 @@ export async function updateStaffAction(userId: string, input: { roleIds: string
     const [superRole] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, SUPER_ADMIN));
     const [target] = await db.select({ email: user.email }).from(user).where(eq(user.id, id));
     if (!target) throw new UserError("Staff member not found.");
+    await assertCanManage(staff, id);
+    const [devRole] = await db.select({ id: roles.id }).from(roles).where(eq(roles.slug, DEVELOPER));
+    if (devRole && roleIds.includes(devRole.id) && !staff.isDeveloper) throw new UserError("Only the Developer can grant the Developer role.");
     await db.transaction(async (tx) => {
       const before = await tx.select({ name: roles.name, id: roles.id }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(userRoles.userId, id));
       const hadSuper = before.some((r) => r.id === superRole?.id);
@@ -127,7 +150,7 @@ export async function saveRoleAction(input: unknown) {
       if (roleId) {
         const [r] = await tx.select().from(roles).where(eq(roles.id, roleId));
         if (!r) throw new UserError("Role not found.");
-        if (r.slug === SUPER_ADMIN) throw new UserError("The Super Admin role always has every permission and can't be edited.");
+        if (r.slug === SUPER_ADMIN || r.slug === DEVELOPER) throw new UserError(`The ${r.name} role always has every permission and can't be edited.`);
         before = (await tx.select({ key: permissions.key }).from(rolePermissions).innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId)).where(eq(rolePermissions.roleId, roleId))).map((p) => p.key);
         await tx.update(roles).set({ name: d.name, description: d.description || null, updatedAt: new Date() }).where(eq(roles.id, roleId));
       } else {
@@ -160,4 +183,47 @@ export async function deleteRoleAction(id: string) {
     await audit({ actor: staff, action: "role.deleted", module: "Security", description: `Deleted role ${r.name}`, entityType: "role", entityId: r.id });
     refresh();
   }, "Role deleted");
+}
+
+/** A readable temporary password that meets the password rules (upper, lower, digit, symbol, 14 chars). */
+function temporaryPassword() {
+  const sets = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnpqrstuvwxyz", "23456789", "!@#$%*?"];
+  const all = sets.join("");
+  const chars = sets.map((s) => s[randomInt(s.length)]);
+  while (chars.length < 14) chars.push(all[randomInt(all.length)]);
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+/**
+ * Gives a staff member a new temporary password (shown once to the person resetting it). They must
+ * change it at their next sign-in, and every session they have is ended now. Super Admin accounts
+ * can only be reset by the Developer; other staff by a Super Admin. Audited and logged.
+ */
+export async function resetStaffPasswordAction(userId: string) {
+  return runAction(async () => {
+    const staff = await requirePermission("staff.manage");
+    const id = userIdSchema.parse(userId);
+    if (id === staff.id) throw new UserError("Change your own password under Security.");
+    const [target] = await db.select({ email: user.email, userType: user.userType }).from(user).where(eq(user.id, id));
+    if (!target || target.userType !== "staff") throw new UserError("Staff member not found.");
+    const slugs = await roleSlugs(id);
+    if ((slugs.includes(SUPER_ADMIN) || slugs.includes(DEVELOPER)) && !staff.isDeveloper) throw new UserError("Only the Developer can reset a Super Admin's password.");
+    if (!staff.isSuperAdmin) throw new UserError("Only a Super Admin can reset staff passwords.");
+    const password = temporaryPassword();
+    const hash = await hashPassword(password);
+    await db.transaction(async (tx) => {
+      const updated = await tx.update(account).set({ password: hash, updatedAt: new Date() }).where(and(eq(account.userId, id), eq(account.providerId, "credential"))).returning({ id: account.id });
+      if (!updated.length) throw new UserError("This account has no password sign-in to reset.");
+      await tx.update(user).set({ mustChangePassword: true, updatedAt: new Date() }).where(eq(user.id, id));
+      await tx.delete(session).where(eq(session.userId, id));
+      await audit({ actor: staff, action: "staff.password_reset", module: "Security", description: `Temporary password issued to ${target.email}`, entityType: "user", entityId: id }, tx);
+    });
+    await securityEvent({ type: "staff_password_reset", userId: id, email: target.email, severity: "warning", meta: { by: staff.email } });
+    refresh();
+    return { password };
+  }, "Temporary password created");
 }

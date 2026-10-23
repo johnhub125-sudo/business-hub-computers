@@ -36,8 +36,15 @@ export type Permission = keyof typeof PERMISSIONS;
 export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[];
 
 export const SUPER_ADMIN = "super-admin";
+/**
+ * The platform developer (Fodan Softnet). Everything a Super Admin can do, plus managing Super
+ * Admins. Shown openly in the staff list and audited like every other account; a Super Admin
+ * cannot remove, demote, suspend or reset a Developer.
+ */
+export const DEVELOPER = "developer";
 
 export const DEFAULT_ROLES: { slug: string; name: string; description: string; permissions: Permission[] | "*" }[] = [
+  { slug: DEVELOPER, name: "Developer", description: "Platform developer and maintainer (Fodan Softnet): full control, including Super Admin accounts", permissions: "*" },
   { slug: SUPER_ADMIN, name: "Super Admin", description: "Full control of the platform", permissions: "*" },
   {
     slug: "admin",

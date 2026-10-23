@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { approveStaffAction, deleteRoleAction, saveRoleAction, setStaffStatusAction, updateStaffAction } from "@/app/admin/actions/staff";
+import { approveStaffAction, deleteRoleAction, resetStaffPasswordAction, saveRoleAction, setStaffStatusAction, updateStaffAction } from "@/app/admin/actions/staff";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/form";
 
@@ -48,6 +48,7 @@ export function StaffEditor({
   mode,
   status,
   isSelf,
+  canResetPassword = false,
 }: {
   userId: string;
   roles: Role[];
@@ -58,6 +59,7 @@ export function StaffEditor({
   mode: "approve" | "edit";
   status: string;
   isSelf: boolean;
+  canResetPassword?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [roleIds, setRoleIds] = useState(current);
@@ -94,6 +96,23 @@ export function StaffEditor({
           {status !== "suspended" && <option value="suspend">Suspend</option>}
           <option value="delete">Delete</option>
         </Select>
+      )}
+      {mode === "edit" && canResetPassword && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending}
+          onClick={() => {
+            if (!confirm("Give this person a new temporary password? They will be signed out and must change it at their next sign-in.")) return;
+            run(async () => {
+              const r = await resetStaffPasswordAction(userId);
+              if (r.ok) window.prompt("Temporary password — copy it now and give it to them privately. It will not be shown again.", r.data.password);
+              return r;
+            });
+          }}
+        >
+          Reset password
+        </Button>
       )}
       <dialog ref={ref} className="m-auto w-[min(560px,calc(100vw-2rem))] rounded-3xl p-0 backdrop:bg-slate-900/50" aria-label="Staff roles">
         <div className="space-y-4 p-6">
