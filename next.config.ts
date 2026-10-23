@@ -29,6 +29,20 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: "6mb" },
   },
+  /**
+   * The shop moved hosting on 23 Oct 2026. The old address keeps working: every page on it is sent
+   * permanently to the same page on the new address (links and search results carry over).
+   */
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "business-hub-computers.vercel.app" }],
+        destination: "https://business-hub-computers-dusky.vercel.app/:path*",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
