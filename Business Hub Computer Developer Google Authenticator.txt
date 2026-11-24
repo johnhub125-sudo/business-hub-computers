@@ -1,0 +1,22 @@
+Business Hub Computer Developer Google Authenticator 2FA
+
+Two-factor authentication
+Add a second step at sign-in using Google Authenticator, Microsoft Authenticator or Authy.
+
+Strongly recommended for administrator accounts.
+
+Two-factor authentication is on.
+
+Save these backup codes somewhere safe. Each can be used once if you lose your phone:
+
+Edz8y-uPU0g
+RLxUq-7LrNK
+kYZFM-1ADhw
+8MgbI-6i8AH
+a9EVn-Ru2Nd
+nyJQY-OzpL3
+r22Tt-wbYXV
+OO3gb-yiyg2
+LECrF-6g4Kb
+qT5k2-aMEqV
+I've saved them
